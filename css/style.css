@@ -258,3 +258,17 @@ input:focus, select:focus, button:focus-visible { outline: 2px solid var(--accen
 .goal-rank { font-size: 28px; font-weight: 800; color: var(--accent); }
 .goal-text { flex: 1; min-width: 12em; }
 @media print { .mine, .goal, .legend-box, .anim { animation: none !important; } .mine, .goal { display: none !important; } }
+
+/* 選手ページの分析 */
+.analysis { display: grid; gap: 12px; }
+.insights { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.insights li { display: flex; gap: 8px; align-items: baseline; font-size: 14px; }
+.insights li span { flex: 0 0 1.4em; text-align: center; }
+.months { display: grid; gap: 4px; }
+.m-row { display: grid; grid-template-columns: 4.2em 1fr 7.5em; align-items: center; gap: 8px; font-size: 13px; }
+.m-bar { height: 10px; background: var(--line); border-radius: 5px; overflow: hidden; }
+.m-bar i { display: block; height: 100%; background: var(--chart-line); border-radius: 5px; }
+.m-row.best .m-bar i { background: var(--accent); }
+.m-row.best .m-label::after { content: ' ★'; color: var(--accent); }
+.m-val { text-align: right; font-variant-numeric: tabular-nums; }
+.m-val small { color: var(--muted); }

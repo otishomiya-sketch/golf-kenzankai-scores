@@ -7,6 +7,7 @@ import {
 import { parseCsv, detectKind, recordsToData, playersCsv, eventsCsv, scoresCsv, defaultLabel } from './csv.js';
 import { store, DEMO, MEMBER_EMAIL } from './store.js';
 import { gameBoard } from './game.js';
+import { playerAnalysis, insights } from './analysis.js';
 
 const $app = document.getElementById('app');
 const state = { data: null, stats: null, overall: null, session: { user: null, admin: false } };
@@ -230,6 +231,7 @@ function viewPlayer(id) {
       <div class="stat"><b>${fmtDecimal(st.avgAll, 2)}</b><span>全平均</span></div>
     </div>
     ${st.count ? `<div class="card">${chart(st, evMap)}</div>` : '<p class="muted">まだスコアがありません。</p>'}
+    ${analysisCard(st)}
     ${st.count ? `<h2>スコア一覧</h2>
     <table class="list"><thead><tr><th class="name">日付</th><th class="name">回</th><th>スコア</th><th class="name">　</th></tr></thead><tbody>
       ${[...st.rounds].reverse().map(r => { const e = evMap.get(r.eventId); const b8 = st.best8EventIds.has(r.eventId); return `<tr>
@@ -237,6 +239,21 @@ function viewPlayer(id) {
         <td class="${colorClass(r.score)} ${markClass(r)} ${b8 ? 'b8' : ''}">${r.score}</td><td class="name small">${[b8 ? 'ベスト8' : '', markTitle(r)].filter(Boolean).join('・')}</td></tr>`; }).join('')}
     </tbody></table>
     <p class="small muted">${st.count >= 8 ? '枠で囲んだスコアがベスト8の計算に使われています（同じスコアは早い回を優先）。' : `${RANK_MIN_ROUNDS}ラウンドに達するとベスト8が計算されます。`}</p>` : ''}`;
+}
+
+// 選手ページの「分析」（合計スコアから分かること）
+function analysisCard(st) {
+  const a = playerAnalysis(st, state.events, state.data.scores, state.data.settings);
+  if (!a) return st.count ? '<p class="small muted">3ラウンド以上で、分析が表示されます。</p>' : '';
+  const lo = Math.min(...a.months.map(m => m.avg)), hi = Math.max(...a.months.map(m => m.avg));
+  const bar = v => hi === lo ? 60 : Math.round(30 + 70 * (hi - v) / (hi - lo));   // 良い月ほど長い
+  return `<h2>分析</h2><div class="card analysis">
+    <ul class="insights">${insights(a).map(i => `<li><span>${i.icon}</span>${h(i.text)}</li>`).join('')}</ul>
+    <div class="months"><div class="small muted">月別の平均（バーが長いほど良い）</div>
+      ${a.months.map(m => `<div class="m-row ${a.bestMonth && a.bestMonth.ym === m.ym ? 'best' : ''}"><span class="m-label">${Number(m.ym.slice(5))}月</span>
+        <span class="m-bar"><i style="width:${bar(m.avg)}%"></i></span><span class="m-val">${m.avg.toFixed(1)}<small>（${m.n}回）</small></span></div>`).join('')}
+    </div>
+    <p class="small muted" style="margin-bottom:0">※ 記録は1ラウンドの合計スコアだけなので、ホール別の得意・不得意はまだ分かりません。</p></div>`;
 }
 
 // 選手ページの「次の目標」
