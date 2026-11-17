@@ -34,23 +34,29 @@ const txt = s => s.replace(/\s+/g, ' ').trim();
   await page.click('[data-act="import"]');
   console.log('→', await toast());
 
-  // 1. 順位表
-  await page.goto(BASE + '#/'); await page.reload(); await page.waitForSelector('table.list');
-  const stats = txt(await page.innerText('.stats'));
-  console.log('全体:', stats);
-  assert.match(stats, /50 開催回数/); assert.match(stats, /394 延べ参加/); assert.match(stats, /7\.88 1回平均/);
-  const top = await page.$$eval('table.list tbody tr', trs => trs.slice(0, 4).map(t => t.innerText.replace(/\s+/g, ' ')));
-  console.log('一般 上位:', top);
-  assert.match(top[0], /^1 下屋敷千尋 599 74\.875 17/);
-  assert.match(top[1], /^2 西島郷史 630/); assert.match(top[2], /^3 高山秀樹 630/);
+  // 1. 順位表（ゲーム風：表彰台＋「あと何打」）
+  await page.goto(BASE + '#/'); await page.reload(); await page.waitForSelector('.podium');
+  const hero = txt(await page.innerText('.hero'));
+  console.log('ヘッダー:', hero);
+  assert.match(hero, /50 ?戦/); assert.match(hero, /394 ?人/);
+  const pod = await page.$$eval('.pod', ps => ps.map(p => p.innerText.replace(/\s+/g, ' ')));
+  console.log('表彰台:', pod);
+  assert.match(pod[1], /下屋敷千尋 599/); assert.match(pod[1], /2位まで 31打 リード/);
+  assert.match(pod[0], /西島郷史 630/); assert.match(pod[2], /高山秀樹 630/);
+  const board = await page.$$eval('.board .rk', rs => rs.slice(0, 3).map(r => r.innerText.replace(/\s+/g, ' ')));
+  console.log('4位〜:', board);
+  assert.match(board[0], /^4 坂本 亮/); assert.match(board[0], /次のラウンド 79以下 で 3位に浮上/);
+  // 自分を選ぶと上にカードが出る（この端末に記憶）
+  await page.selectOption('#my-select', 'P005'); await page.waitForSelector('.mine-rank');
+  assert.match(txt(await page.innerText(".mine")), /5 ?位/);
+  await page.reload(); await page.waitForSelector('.mine-rank');
   await shot('1-ranking');
-  await page.goto(BASE + '#/?c=' + encodeURIComponent('女子')); await page.waitForTimeout(150);
-  const women = await page.$$eval('table.list tbody tr', trs => trs.map(t => t.innerText.replace(/\s+/g, ' ')));
-  console.log('女子:', women);
-  await page.goto(BASE + '#/?c=J'); await page.waitForTimeout(150);
-  const j = await page.$$eval('table.list tbody tr', trs => trs.map(t => t.innerText.replace(/\s+/g, ' ')));
-  console.log('J:', j);
-  assert.ok(j.some(r => r.includes('*大宮久司')), '未入会は「*」付き');
+  await page.click('[data-act=my-change]'); await page.waitForSelector('#my-select');
+  await page.goto(BASE + '#/?c=J'); await page.waitForTimeout(200);
+  const j = txt(await page.innerText('main'));
+  console.log('J:', j.slice(0, 160));
+  assert.ok(j.includes('*大宮久司'), '未入会は「*」付き');
+  assert.match(j, /あと7回/);
 
   // 2. 成績一覧
   await page.goto(BASE + '#/grid'); await page.waitForSelector('.grid');
@@ -111,10 +117,10 @@ const txt = s => s.replace(/\s+/g, ' ').trim();
   await shot('4-input');
   await page.click('[data-act="save-entry"]');
   console.log('→', await toast());
-  await page.goto(BASE + '#/'); await page.waitForSelector('.stats');
-  const after = txt(await page.innerText('.stats'));
+  await page.goto(BASE + '#/'); await page.waitForSelector('.hero');
+  const after = txt(await page.innerText('.hero'));
   console.log('保存後の全体:', after);
-  assert.match(after, /51 開催回数/); assert.match(after, /397 延べ参加/);
+  assert.match(after, /51 ?戦/); assert.match(after, /397 ?人/);
 
   // 5. 管理：色の境目を変える
   await page.goto(BASE + '#/admin?t=settings');

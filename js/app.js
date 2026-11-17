@@ -6,6 +6,7 @@ import {
 } from './stats.js';
 import { parseCsv, detectKind, recordsToData, playersCsv, eventsCsv, scoresCsv, defaultLabel } from './csv.js';
 import { store, DEMO, MEMBER_EMAIL } from './store.js';
+import { gameBoard } from './game.js';
 
 const $app = document.getElementById('app');
 const state = { data: null, stats: null, overall: null, session: { user: null, admin: false } };
@@ -53,35 +54,93 @@ function nav(active) {
 }
 
 // ---------- 1. 順位表 ----------
+// ---------- 1. 順位表（ゲームのように「あと何打で上へ」を見せる） ----------
+const MY_KEY = 'golf-kenzankai-my-player';
+const myPlayerId = () => { try { return localStorage.getItem(MY_KEY) || ''; } catch { return ''; } };
+const setMyPlayer = id => { try { id ? localStorage.setItem(MY_KEY, id) : localStorage.removeItem(MY_KEY); } catch { /* 保存できなくても表示は続ける */ } };
+
+function moveTag(m) {
+  if (m === 'new') return '<span class="mv new" title="今回ランキング入り">NEW</span>';
+  if (m > 0) return `<span class="mv up" title="前回から${m}つ上がった">▲${m}</span>`;
+  if (m < 0) return `<span class="mv down" title="前回から${-m}つ下がった">▼${-m}</span>`;
+  return '';
+}
+const badgeHtml = bs => bs.map(b => `<span class="bdg" title="${h(b.label)}" aria-label="${h(b.label)}">${b.icon}</span>`).join('');
+const plink = (s, inner) => `<a href="#/p/${encodeURIComponent(s.player.id)}">${inner}</a>`;
+
+function goalText(r) {
+  if (r.lead !== null && r.lead !== undefined) return r.lead > 0 ? `2位まで <b>${r.lead}打</b> リード` : '首位タイ';
+  if (r.target) return `次のラウンド <b>${r.target}以下</b> で ${r.above.rank}位に浮上`;
+  if (r.gapUp !== null) return r.gapUp === 0 ? `${r.above.rank}位と同スコア（回数・全計の差）` : `${r.above.rank}位まで あと <b>${r.gapUp}打</b>`;
+  return '';
+}
+
 function viewRanking(q) {
   const cat = CATEGORIES.includes(q.get('c')) ? q.get('c') : '一般';
-  const showZero = q.get('all') === '1';
-  const { ranked, unranked } = rankCategory(state.stats, cat);
-  const shownUnranked = showZero ? unranked : unranked.filter(s => s.count > 0);
+  const board = gameBoard(state.data.players, state.events, state.data.scores, cat, state.data.settings);
+  const { rows, waiting, latest } = board;
   const o = state.overall;
-  const last = sortEvents(state.events).filter(e => !e.cancelled && o.perEvent.get(e.id) > 0).pop();
-  const row = (s, rank) => `<tr>
-    <td class="rank">${rank}</td>
-    <td class="name"><a href="#/p/${encodeURIComponent(s.player.id)}">${h(displayName(s.player))}</a></td>
-    <td>${fmtInt(s.best8)}</td><td>${fmtDecimal(s.avg8, 3)}</td><td>${s.count}</td><td class="hide-sm">${fmtDecimal(s.avgAll, 2)}</td></tr>`;
+  const mine = myPlayerId();
+  const myRow = rows.find(r => r.player.id === mine);
+  const myWait = waiting.find(r => r.player.id === mine);
+  const myPlayer = state.data.players.find(p => p.id === mine);
+
+  // マイ選手（この端末に記憶）
+  let myCard = '';
+  if (myRow) {
+    myCard = `<div class="mine anim" style="--i:0">
+      <div class="mine-rank"><small>あなたの順位</small><b>${myRow.rank}<i>位</i></b>${moveTag(myRow.move)}</div>
+      <div class="mine-body"><div class="mine-name">${h(displayName(myRow.player))} ${badgeHtml(myRow.badges)}</div>
+        <div class="mine-goal">${goalText(myRow)}</div>
+        <div class="small muted">ベスト8 ${fmtInt(myRow.best8)}・回数 ${myRow.count}</div></div>
+      <button type="button" class="linkish" data-act="my-change">変更</button></div>`;
+  } else if (myWait) {
+    myCard = `<div class="mine anim" style="--i:0">
+      <div class="mine-rank"><small>ランキング入りまで</small><b>${myWait.toGo}<i>回</i></b></div>
+      <div class="mine-body"><div class="mine-name">${h(displayName(myWait.player))} ${badgeHtml(myWait.badges)}</div>
+        <div class="dots" aria-label="${myWait.count}/${RANK_MIN_ROUNDS}ラウンド">${dots(myWait.count)}</div></div>
+      <button type="button" class="linkish" data-act="my-change">変更</button></div>`;
+  } else if (!myPlayer || myPlayer.category === cat) {
+    const opts = state.data.players.filter(p => p.category === cat).sort(compareNumber)
+      .map(p => `<option value="${h(p.id)}">${h(displayName(p))}</option>`).join('');
+    myCard = `<div class="mine pick anim" style="--i:0"><label class="grow">⛳ 自分を選ぶと、順位と「次の目標スコア」をいつもここに表示します
+      <select id="my-select"><option value="">選んでください</option>${opts}</select></label></div>`;
+  }
+
+  const top = rows.filter(r => r.rank <= 3);
+  const rest = rows.filter(r => r.rank > 3);
+  const medal = { 1: '🥇', 2: '🥈', 3: '🥉' };
+  const podium = top.length >= 3 && new Set(top.map(r => r.rank)).size === 3 ? `<div class="podium">${[top[1], top[0], top[2]].map((r, i) => `
+      <div class="pod p${r.rank} anim ${r.player.id === mine ? 'me' : ''}" style="--i:${[2, 1, 3][i]}">
+        ${plink(r, `<div class="medal">${medal[r.rank]}</div><div class="pod-name">${h(displayName(r.player))}</div>
+        <div class="pod-score">${fmtInt(r.best8)}</div><div class="pod-sub">${moveTag(r.move)} ${badgeHtml(r.badges)}</div>
+        <div class="pod-goal">${goalText(r)}</div>`)}
+        <div class="pod-base">${r.rank}</div></div>`).join('')}</div>` : '';
+  const listRows = podium ? rest : rows;
+
+  const card = (r, i) => `<li class="rk anim ${r.player.id === mine ? 'me' : ''}" style="--i:${Math.min(i + 4, 20)}">
+    ${plink(r, `<span class="rk-no">${r.rank}</span>
+      <span class="rk-main"><span class="rk-name">${h(displayName(r.player))} ${badgeHtml(r.badges)}</span>
+        <span class="rk-goal">${goalText(r)}</span></span>
+      <span class="rk-side"><b>${fmtInt(r.best8)}</b>${moveTag(r.move)}</span>`)}</li>`;
+
   return `
-    <div class="stats">
-      <div class="stat"><b>${o.held}</b><span>開催回数</span></div>
-      <div class="stat"><b>${fmtInt(o.total)}</b><span>延べ参加</span></div>
-      <div class="stat"><b>${fmtDecimal(o.average, 2)}</b><span>1回平均（人）</span></div>
-      <div class="stat"><b>${last ? h(last.label) : '—'}</b><span>最新の開催</span></div>
+    <div class="hero anim" style="--i:0">
+      <div><small>${latest ? `${h(latest.label)} 終了時点` : 'シーズン開始前'}</small><b>年間ランキング</b></div>
+      <div class="hero-stats"><span><b>${o.held}</b>戦</span><span><b>${fmtInt(o.total)}</b>人</span></div>
     </div>
     <div class="tabs" role="tablist">${CATEGORIES.map(c => `<a role="tab" aria-selected="${c === cat}" class="${c === cat ? 'on' : ''}" href="#/?c=${encodeURIComponent(c)}">${CATEGORY_LABEL[c]}</a>`).join('')}</div>
-    <table class="list">
-      <thead><tr><th class="rank">順位</th><th class="name">氏名</th><th>ベスト8</th><th>平均⑧</th><th>回数</th><th class="hide-sm">全平均</th></tr></thead>
-      <tbody>
-        ${ranked.map(s => row(s, s.rank)).join('') || `<tr><td colspan="6" class="name muted">${RANK_MIN_ROUNDS}ラウンド以上の選手はまだいません</td></tr>`}
-        ${shownUnranked.length ? `<tr class="sep"><td colspan="6">順位外（${RANK_MIN_ROUNDS}ラウンド未満・回数の多い順）</td></tr>` + shownUnranked.map(s => row(s, '—')).join('') : ''}
-      </tbody>
-    </table>
-    <p class="small muted">並び順：ベスト8の少ない順 → 同点は回数の多い順 → 全計の少ない順。氏名の「*」は未入会・他クラブ。
-      ${unranked.some(s => s.count === 0) ? `<a href="#/?c=${encodeURIComponent(cat)}${showZero ? '' : '&all=1'}">${showZero ? '参加0回の選手を隠す' : '参加0回の選手も表示'}</a>` : ''}</p>`;
+    ${myCard}
+    ${rows.length ? podium + `<ol class="board">${listRows.map(card).join('')}</ol>` : `<p class="muted">${RANK_MIN_ROUNDS}ラウンド以上の選手はまだいません。</p>`}
+    ${waiting.length ? `<h2>ランキング入りまで、あと少し</h2><ul class="waiting">${waiting.map((w, i) => `
+      <li class="anim ${w.player.id === mine ? 'me' : ''}" style="--i:${Math.min(i + 6, 20)}">${plink(w, `<span class="w-name">${h(displayName(w.player))} ${badgeHtml(w.badges)}</span>
+        <span class="dots" aria-label="${w.count}/${RANK_MIN_ROUNDS}">${dots(w.count)}</span><span class="w-left">あと${w.toGo}回</span>`)}</li>`).join('')}</ul>` : ''}
+    <details class="small muted legend-box"><summary>見方</summary>
+      <p>数字はベスト8の合計（少ないほど上）。「次のラウンド○以下で浮上」は、次の1ラウンドでそのスコア以下を出せば1つ上に上がれる目安です。▲▼は前回の開催からの順位の変化。</p>
+      <p>🔥 好調（直近3回が平均より2打以上良い）　🎯 前回自己ベスト　🦅 アンダーを出した　💪 参加回数が最多</p>
+      <p>同点は回数の多い順 → 全計の少ない順 → 直近のスコアが良い順。氏名の「*」は未入会・他クラブ。</p></details>`;
 }
+const dots = n => Array.from({ length: RANK_MIN_ROUNDS }, (_, i) => `<i class="${i < n ? 'on' : ''}"></i>`).join('');
 
 // ---------- 2. 成績一覧（選手×開催回） ----------
 function viewGrid(q) {
@@ -159,6 +218,7 @@ function viewPlayer(id) {
   return `
     <p class="small"><a href="#/?c=${encodeURIComponent(p.category)}">← ${h(p.category)}の順位表</a></p>
     <h1>${h(displayName(p))} <span class="small muted">${h(p.category)} ${h(p.number)}</span></h1>
+    ${playerGoal(p)}
     <div class="stats">
       <div class="stat"><b>${me ? `${me.rank}位` : '順位外'}</b><span>${h(p.category)}の順位</span></div>
       <div class="stat"><b>${st.bestScore ?? '—'}</b><span>ベストスコア</span></div>
@@ -177,6 +237,20 @@ function viewPlayer(id) {
         <td class="${colorClass(r.score)} ${markClass(r)} ${b8 ? 'b8' : ''}">${r.score}</td><td class="name small">${[b8 ? 'ベスト8' : '', markTitle(r)].filter(Boolean).join('・')}</td></tr>`; }).join('')}
     </tbody></table>
     <p class="small muted">${st.count >= 8 ? '枠で囲んだスコアがベスト8の計算に使われています（同じスコアは早い回を優先）。' : `${RANK_MIN_ROUNDS}ラウンドに達するとベスト8が計算されます。`}</p>` : ''}`;
+}
+
+// 選手ページの「次の目標」
+function playerGoal(p) {
+  const { rows, waiting } = gameBoard(state.data.players, state.events, state.data.scores, p.category, state.data.settings);
+  const r = rows.find(x => x.player.id === p.id), w = waiting.find(x => x.player.id === p.id);
+  const isMine = myPlayerId() === p.id;
+  const mineBtn = isMine ? '<span class="small muted">⛳ この端末の「自分」に設定中</span>'
+    : `<button type="button" class="btn sub sm" data-act="my-set" data-id="${h(p.id)}">これは自分（順位表に表示）</button>`;
+  if (r) return `<div class="goal anim" style="--i:0"><div class="goal-rank">${r.rank}<i>位</i> ${moveTag(r.move)}</div>
+    <div class="goal-text">${goalText(r)} ${badgeHtml(r.badges)}</div>${mineBtn}</div>`;
+  if (w) return `<div class="goal anim" style="--i:0"><div class="goal-rank">あと${w.toGo}<i>回</i></div>
+    <div class="goal-text">ランキング入りまで <span class="dots">${dots(w.count)}</span> ${badgeHtml(w.badges)}</div>${mineBtn}</div>`;
+  return `<div class="goal">${mineBtn}</div>`;
 }
 
 function chart(st, evMap) {
@@ -506,6 +580,8 @@ document.addEventListener('click', async ev => {
   if (!el) return;
   const act = el.dataset.act;
   if (act === 'logout') { ev.preventDefault(); await store.signOut(); state.session = await store.session(); state.data = null; go('#/'); return; }
+  if (act === 'my-change') { setMyPlayer(''); return render(); }
+  if (act === 'my-set') { setMyPlayer(el.dataset.id); toast('この端末の「自分」に設定しました'); return render(); }
   if (act === 'add-player') return addToEntry([el.dataset.id]);
   if (act === 'add-all-prev') return addToEntry(previousParticipants(state.data.events.find(e => e.id === entry.eventId)).map(p => p.id));
   if (act === 'add-typed') {
@@ -587,6 +663,7 @@ document.addEventListener('change', ev => {
     loadEntry(t.value); go(`#/input?e=${encodeURIComponent(t.value)}`);
   }
   if (t.id === 'csv-files') onCsvFiles(t);
+  if (t.id === 'my-select') { setMyPlayer(t.value); render(); }
 });
 
 document.addEventListener('submit', async ev => {
