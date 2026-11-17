@@ -81,6 +81,14 @@ GOLF_DATA_DIR=<CSVのフォルダ> node tests/e2e.cjs   # 画面の通しテス�
 過去のスコアは消えない（開始日を戻せば前シーズンを再表示できる）。
 既存のデータベースでは [`supabase/003_season_selection.sql`](supabase/003_season_selection.sql) を1回実行してから使う。
 
+## スコアカード（ホール別の分析）
+- 選手ページの「📷 スコアカードを登録」から、写真を撮る（または選ぶ）と AI が18ホールの打数を読み取る。確認・修正してから保存
+- 写真は保存しない。ホール別のスコアは分析だけに使い、順位には影響しない
+- 会員（共通アカウント）も登録・上書きできる。すべての登録は `hole_card_log` に自動で残り、管理者だけが見られる（削除も管理者だけ）
+- AI の読み取りは Supabase Edge Function [`read-scorecard`](supabase/functions/read-scorecard/index.ts)（Claude API）。24時間で150回まで
+- 準備：[`supabase/004_hole_cards.sql`](supabase/004_hole_cards.sql) を実行／Edge Function を作成／Secrets に `ANTHROPIC_API_KEY` を登録
+- コース情報（パー）は [`js/course.js`](js/course.js)（https://biracc.com/guide/ より）
+
 ## 幹事に確認済み（2026-11）
 - 公開範囲：会員だけに見せる（会長・副会長の確認後に案内）
 - NR：120点のペナルティとして、そのまま集計に含める（故意のNR防止）

@@ -8,6 +8,8 @@ import { parseCsv, detectKind, recordsToData, playersCsv, eventsCsv, scoresCsv, 
 import { store, DEMO, MEMBER_EMAIL } from './store.js';
 import { gameBoard } from './game.js';
 import { playerAnalysis, insights } from './analysis.js';
+import { holeAnalysis, holeInsights } from './holes.js';
+import { COURSE } from './course.js';
 
 const $app = document.getElementById('app');
 const state = { data: null, stats: null, overall: null, session: { user: null, admin: false } };
@@ -232,6 +234,7 @@ function viewPlayer(id) {
     </div>
     ${st.count ? `<div class="card">${chart(st, evMap)}</div>` : '<p class="muted">まだスコアがありません。</p>'}
     ${analysisCard(st)}
+    ${holeSection(st)}
     ${st.count ? `<h2>スコア一覧</h2>
     <table class="list"><thead><tr><th class="name">日付</th><th class="name">回</th><th>スコア</th><th class="name">　</th></tr></thead><tbody>
       ${[...st.rounds].reverse().map(r => { const e = evMap.get(r.eventId); const b8 = st.best8EventIds.has(r.eventId); return `<tr>
@@ -239,6 +242,170 @@ function viewPlayer(id) {
         <td class="${colorClass(r.score)} ${markClass(r)} ${b8 ? 'b8' : ''}">${r.score}</td><td class="name small">${[b8 ? 'ベスト8' : '', markTitle(r)].filter(Boolean).join('・')}</td></tr>`; }).join('')}
     </tbody></table>
     <p class="small muted">${st.count >= 8 ? '枠で囲んだスコアがベスト8の計算に使われています（同じスコアは早い回を優先）。' : `${RANK_MIN_ROUNDS}ラウンドに達するとベスト8が計算されます。`}</p>` : ''}`;
+}
+
+// ---------- スコアカード（ホール別） ----------
+const norm = t => String(t || '').replace(/[\s　*＊]/g, '');
+const holeCardsOf = pid => (state.data.holeCards || []).filter(c => c.playerId === pid && state.events.some(e => e.id === c.eventId));
+
+function holeSection(st) {
+  if (!st.count) return '';
+  const btn = `<a class="btn sub sm" href="#/card?p=${encodeURIComponent(st.player.id)}">📷 スコアカードを登録</a>`;
+  if (!state.data.holeCardsReady) return '';
+  const cards = holeCardsOf(st.player.id);
+  const a = holeAnalysis(cards);
+  if (!a) return `<h2>ホール別の分析</h2><div class="card"><p style="margin-top:0">スコアカードを登録すると、得意・苦手なホールやパー3／4／5の傾向が分かります。</p>${btn}</div>`;
+  const cls = o => (o <= 0 ? 'h-good' : o >= 1.5 ? 'h-hard' : o >= 1 ? 'h-mid' : '');
+  const half = (from, to, label, avg, par) => `<table class="holes"><thead><tr><th>${label}</th>${a.holes.slice(from - 1, to).map(x => `<th>${x.hole}</th>`).join('')}<th>計</th></tr></thead>
+    <tbody><tr><th>パー</th>${a.holes.slice(from - 1, to).map(x => `<td>${x.par}</td>`).join('')}<td>${par}</td></tr>
+    <tr><th>平均</th>${a.holes.slice(from - 1, to).map(x => `<td class="${cls(x.over)}">${x.avg.toFixed(1)}</td>`).join('')}<td>${avg.toFixed(1)}</td></tr></tbody></table>`;
+  return `<h2>ホール別の分析 <span class="small muted">スコアカード ${a.n}枚（全${st.count}ラウンド中）</span></h2>
+    <div class="card analysis">
+      <ul class="insights">${holeInsights(a).map(i => `<li><span>${i.icon}</span>${h(i.text)}</li>`).join('')}</ul>
+      <div class="holes-wrap">${half(1, 9, 'OUT', a.out.avg, a.out.par)}${half(10, 18, 'IN', a.in.avg, a.in.par)}</div>
+      <p class="small muted" style="margin:0">緑＝パー以下、黄＝パー+1前後、橙＝+1.5以上。${a.n < 5 ? '枚数が少ないうちは、たまたまの結果に左右されます。5枚以上で傾向がはっきりします。' : ''}</p>
+      ${btn}
+    </div>`;
+}
+
+const cardState = { key: '', strokes: Array(18).fill(''), source: 'manual', reading: false, read: null, pick: -1, others: new Set(), note: '' };
+function cardRoundsOf(pid) {
+  const ids = new Set(state.data.scores.filter(x => x.playerId === pid).map(x => x.eventId));
+  return sortEvents(state.events).filter(e => ids.has(e.id)).reverse();
+}
+function resetCard(pid, eid) {
+  const existing = (state.data.holeCards || []).find(c => c.playerId === pid && c.eventId === eid);
+  Object.assign(cardState, { key: pid + '|' + eid, strokes: existing ? existing.strokes.map(String) : Array(18).fill(''), source: existing?.source || 'manual',
+    reading: false, read: null, pick: -1, others: new Set(), note: '' });
+}
+
+function viewCard(q) {
+  if (!state.data.holeCardsReady) return '<h1>スコアカードの登録</h1><div class="notice">準備中です（管理者の方：Supabase で 004_hole_cards.sql を実行してください）。</div>';
+  const players = state.data.players.filter(p => state.data.scores.some(x => x.playerId === p.id))
+    .sort((a, b) => CATEGORIES.indexOf(a.category) - CATEGORIES.indexOf(b.category) || compareNumber(a, b));
+  const pid = players.some(p => p.id === q.get('p')) ? q.get('p') : (players.find(p => p.id === myPlayerId())?.id || players[0]?.id);
+  if (!pid) return '<p>スコアのある選手がいません。</p>';
+  const rounds = cardRoundsOf(pid);
+  const hasCard = eid => (state.data.holeCards || []).some(c => c.playerId === pid && c.eventId === eid);
+  const eid = rounds.some(e => e.id === q.get('e')) ? q.get('e') : (rounds.find(e => !hasCard(e.id)) || rounds[0])?.id;
+  if (!eid) return '<p>今シーズンのラウンドがありません。</p>';
+  if (cardState.key !== pid + '|' + eid) resetCard(pid, eid);
+  const official = state.data.scores.find(x => x.playerId === pid && x.eventId === eid)?.score;
+  const player = state.data.players.find(p => p.id === pid);
+
+  const nums = cardState.strokes.map(v => (/^\d+$/.test(v) ? Number(v) : null));
+  const sum = (a, b) => nums.slice(a, b).every(v => v !== null) ? nums.slice(a, b).reduce((x, y) => x + y, 0) : null;
+  const outT = sum(0, 9), inT = sum(9, 18), tot = outT !== null && inT !== null ? outT + inT : null;
+  const match = tot === null ? '' : tot === official ? `<span class="ok">✓ 公式スコア（${official}）と一致</span>`
+    : `<span class="warn">公式スコアは ${official} です（${tot > official ? '+' : ''}${tot - official}）。読み取りか入力を確認してください</span>`;
+  const grid = (from, to, label, t) => `<table class="holes entry-holes"><thead><tr><th>${label}</th>${COURSE.par.slice(from, to).map((_, i) => `<th>${from + i + 1}</th>`).join('')}<th>計</th></tr></thead>
+    <tbody><tr><th>パー</th>${COURSE.par.slice(from, to).map(p => `<td>${p}</td>`).join('')}<td>36</td></tr>
+    <tr><th>打数</th>${cardState.strokes.slice(from, to).map((v, i) => `<td><input class="hs" data-h="${from + i}" inputmode="numeric" maxlength="2" value="${h(v)}" aria-label="${from + i + 1}番"></td>`).join('')}<td class="t">${t ?? ''}</td></tr></tbody></table>`;
+
+  const read = cardState.read;
+  const rows = read?.players || [];
+  const participants = new Set(state.data.scores.filter(x => x.eventId === eid).map(x => x.playerId));
+  const rosterPlayer = r => state.data.players.find(p => participants.has(p.id) && (norm(p.name) === norm(r.roster_match) || (r.name_on_card && norm(p.name) === norm(r.name_on_card))));
+  const readBox = cardState.reading ? '<div class="notice">📷 読み取り中です…（10〜30秒ほどかかります）</div>'
+    : read ? `<div class="card read-box">
+        ${read.is_scorecard === false ? '<p class="warn">スコアカードの写真ではないようです。</p>' : ''}
+        ${rows.length ? `<div class="small muted">カードから読み取った人：自分の行を選んでください</div>
+          ${rows.map((r, i) => { const rp = rosterPlayer(r); const full = r.holes.every(v => Number.isInteger(v)); return `<label class="read-row">
+            <input type="radio" name="read-pick" value="${i}" ${cardState.pick === i ? 'checked' : ''}>
+            <span><b>${h(r.name_on_card || '（名前が読めません）')}</b>${rp ? `（${h(rp.name)}）` : ''}　計 ${r.total ?? '—'}${full ? '' : '　<span class="warn">読めないホールあり</span>'}</span></label>`; }).join('')}` : ''}
+        ${rows.filter((r, i) => i !== cardState.pick && rosterPlayer(r) && rosterPlayer(r).id !== pid && r.holes.every(v => Number.isInteger(v))).length ? `<div class="small muted" style="margin-top:8px">同じ組の人の分も、まとめて登録できます</div>
+          ${rows.map((r, i) => { const rp = rosterPlayer(r); if (i === cardState.pick || !rp || rp.id === pid || !r.holes.every(v => Number.isInteger(v))) return '';
+            const off = state.data.scores.find(x => x.playerId === rp.id && x.eventId === eid)?.score; const t = r.holes.reduce((a, b) => a + b, 0);
+            return `<label class="read-row"><input type="checkbox" class="other-pick" value="${i}" ${cardState.others.has(i) ? 'checked' : ''}>
+              <span>${h(rp.name)}さん　計 ${t}${off === t ? ' <span class="ok">✓一致</span>' : ` <span class="warn">公式${off ?? '—'}</span>`}</span></label>`; }).join('')}` : ''}
+        ${read.note ? `<p class="small muted" style="margin-bottom:0">AIのメモ：${h(read.note)}</p>` : ''}
+      </div>` : '';
+
+  return `<h1>スコアカードの登録</h1>
+    <p class="small muted" style="margin-top:-6px">写真から18ホールのスコアを読み取ります。写真は保存しません。ホール別のスコアは分析にだけ使い、順位には影響しません。</p>
+    <div class="row">
+      <label class="f grow">選手<select id="card-player">${players.map(p => `<option value="${h(p.id)}" ${p.id === pid ? 'selected' : ''}>${h(displayName(p))}</option>`).join('')}</select></label>
+      <label class="f grow">ラウンド<select id="card-event">${rounds.map(e => `<option value="${h(e.id)}" ${e.id === eid ? 'selected' : ''}>${h(e.label)}（${h(e.date)}）${hasCard(e.id) ? ' ✓登録済み' : ''}</option>`).join('')}</select></label>
+    </div>
+    <label class="btn photo-btn">📷 スコアカードを撮る／写真を選ぶ<input type="file" id="card-photo" accept="image/*" hidden></label>
+    ${readBox}
+    <h2>${h(player.name)}さんの打数 <span class="small muted">公式スコア ${official ?? '—'}</span></h2>
+    <div class="holes-wrap">${grid(0, 9, 'OUT', outT)}${grid(9, 18, 'IN', inT)}</div>
+    <p>合計 <b>${tot ?? '—'}</b>　${match}</p>
+    <div class="sticky-actions row"><span class="grow small muted">${hasCard(eid) ? '登録済みのカードを上書きします' : ''}</span>
+      <a class="btn sub" href="#/p/${encodeURIComponent(pid)}">戻る</a>
+      <button type="button" class="btn" data-act="save-card">保存</button></div>`;
+}
+
+function updateCardTotals() {
+  // 入力欄は作り直さず、合計だけ更新する（スマホのキーボードが閉じないように）
+  const nums = cardState.strokes.map(v => (/^\d+$/.test(v) ? Number(v) : null));
+  const sum = (a, b) => nums.slice(a, b).every(v => v !== null) ? nums.slice(a, b).reduce((x, y) => x + y, 0) : '';
+  const cells = document.querySelectorAll('.entry-holes td.t');
+  if (cells[0]) cells[0].textContent = sum(0, 9);
+  if (cells[1]) cells[1].textContent = sum(9, 18);
+}
+
+// 写真を縮小して JPEG の base64 にする（通信量と読み取り費用を減らす）
+function photoToBase64(file, max = 1600) {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      const k = Math.min(1, max / Math.max(img.naturalWidth, img.naturalHeight));
+      const c = document.createElement('canvas');
+      c.width = Math.round(img.naturalWidth * k); c.height = Math.round(img.naturalHeight * k);
+      c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+      URL.revokeObjectURL(url);
+      resolve(c.toDataURL('image/jpeg', 0.85).split(',')[1]);
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('この写真は開けませんでした（JPEG・PNG で試してください）')); };
+    img.src = url;
+  });
+}
+
+async function readCardPhoto(file) {
+  const { q } = route();
+  const pid = document.getElementById('card-player').value, eid = document.getElementById('card-event').value;
+  cardState.reading = true; cardState.read = null; render();
+  try {
+    const image = await photoToBase64(file);
+    const roster = state.data.players.filter(p => state.data.scores.some(x => x.eventId === eid && x.playerId === p.id)).map(p => p.name);
+    const result = await store.readScorecard({ image, mediaType: 'image/jpeg', roster });
+    cardState.read = result;
+    const me = state.data.players.find(p => p.id === pid);
+    const idx = (result.players || []).findIndex(r => norm(r.roster_match) === norm(me.name) || norm(r.name_on_card) === norm(me.name));
+    pickRow(idx >= 0 ? idx : ((result.players || []).length === 1 ? 0 : -1));
+    if (!(result.players || []).length) toast('スコアを読み取れませんでした。手で入力してください', true);
+  } catch (e) { toast(e.message, true); }
+  finally { cardState.reading = false; render(); }
+  void q;
+}
+function pickRow(i) {
+  cardState.pick = i;
+  const r = cardState.read?.players?.[i];
+  if (r) { cardState.strokes = r.holes.map(v => (Number.isInteger(v) ? String(v) : '')); cardState.source = 'ai'; }
+}
+
+async function saveCard() {
+  const pid = document.getElementById('card-player').value, eid = document.getElementById('card-event').value;
+  const nums = cardState.strokes.map(v => (/^\d+$/.test(v) ? Number(v) : null));
+  if (nums.some(v => v === null || v < 1 || v > 15)) { toast('18ホールすべてに、1〜15の数字を入れてください', true); return; }
+  const official = state.data.scores.find(x => x.playerId === pid && x.eventId === eid)?.score;
+  const tot = nums.reduce((a, b) => a + b, 0);
+  if (official !== undefined && tot !== official && !confirm(`合計 ${tot} が公式スコア ${official} と違います。このまま保存しますか？`)) return;
+  const extra = [...cardState.others].map(i => cardState.read.players[i]).map(r => {
+    const rp = state.data.players.find(p => norm(p.name) === norm(r.roster_match) || norm(p.name) === norm(r.name_on_card));
+    return rp && rp.id !== pid ? { eventId: eid, playerId: rp.id, strokes: r.holes, source: 'ai' } : null;
+  }).filter(Boolean);
+  await withBusy(async () => {
+    await store.saveHoleCard({ eventId: eid, playerId: pid, strokes: nums, source: cardState.source });
+    for (const c of extra) await store.saveHoleCard(c);
+    await reload();
+    cardState.key = '';
+    toast(`保存しました${extra.length ? `（ほか${extra.length}人分も）` : ''}`);
+    go(`#/p/${encodeURIComponent(pid)}`);
+  });
 }
 
 // 選手ページの「分析」（合計スコアから分かること）
@@ -596,7 +763,7 @@ function render() {
   nav(page === 'p' ? 'ranking' : page);
   const views = {
     ranking: () => viewRanking(q), grid: () => viewGrid(q), p: () => viewPlayer(decodeURIComponent(parts[1] || '')),
-    input: () => viewInput(q), admin: () => viewAdmin(q), login: viewLogin, selection: viewSelection, account: viewAccount,
+    input: () => viewInput(q), admin: () => viewAdmin(q), login: viewLogin, selection: viewSelection, account: viewAccount, card: () => viewCard(q),
   };
   $app.innerHTML = (views[page] || views.ranking)();
   // 用紙：成績一覧は列が多いので A3 横、それ以外は A4 縦
@@ -624,6 +791,7 @@ document.addEventListener('click', async ev => {
   }
   if (act === 'remove-row') { entry.rows.splice(Number(el.dataset.i), 1); entry.dirty = true; return render(); }
   if (act === 'save-entry') return saveEntry();
+  if (act === 'save-card') return saveCard();
   if (act === 'export') {
     const { players, events, scores } = state.data;
     const k = el.dataset.kind;
@@ -667,6 +835,13 @@ document.addEventListener('input', ev => {
     document.getElementById('entry-count').textContent = entrySummary();
   }
   if (t.closest('form[data-form="settings"]')) settingsPreview(t.form);
+  if (t.matches('input.hs')) {
+    // 打数の入力：数字だけ、2桁まで。1桁入ったら次のホールへ進む（10以上は2桁目を続けて打てる）
+    const v = t.value.replace(/[０-９]/g, d => String.fromCharCode(d.charCodeAt(0) - 0xFEE0)).replace(/\D/g, '').slice(0, 2);
+    t.value = v; cardState.strokes[Number(t.dataset.h)] = v; cardState.source = cardState.source === 'ai' ? 'ai' : 'manual';
+    updateCardTotals();
+    if (v.length === 1 && v !== '1') document.querySelector(`input.hs[data-h="${Number(t.dataset.h) + 1}"]`)?.focus();
+  }
 });
 
 document.addEventListener('keydown', ev => {
@@ -694,6 +869,11 @@ document.addEventListener('change', ev => {
     loadEntry(t.value); go(`#/input?e=${encodeURIComponent(t.value)}`);
   }
   if (t.id === 'csv-files') onCsvFiles(t);
+  if (t.id === 'card-player') { cardState.key = ''; go(`#/card?p=${encodeURIComponent(t.value)}`); }
+  if (t.id === 'card-event') { cardState.key = ''; go(`#/card?p=${encodeURIComponent(document.getElementById('card-player').value)}&e=${encodeURIComponent(t.value)}`); }
+  if (t.id === 'card-photo' && t.files[0]) readCardPhoto(t.files[0]);
+  if (t.name === 'read-pick') { pickRow(Number(t.value)); render(); }
+  if (t.classList?.contains('other-pick')) { const i = Number(t.value); t.checked ? cardState.others.add(i) : cardState.others.delete(i); }
   if (t.id === 'my-select') { setMyPlayer(t.value); render(); }
 });
 

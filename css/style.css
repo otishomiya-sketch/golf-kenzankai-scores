@@ -272,3 +272,21 @@ input:focus, select:focus, button:focus-visible { outline: 2px solid var(--accen
 .m-row.best .m-label::after { content: ' ★'; color: var(--accent); }
 .m-val { text-align: right; font-variant-numeric: tabular-nums; }
 .m-val small { color: var(--muted); }
+
+/* ホール別（スコアカード） */
+.holes-wrap { display: grid; gap: 8px; overflow-x: auto; }
+.holes { width: 100%; border-collapse: collapse; font-size: 13px; font-variant-numeric: tabular-nums; table-layout: fixed; }
+.holes th, .holes td { border: 1px solid var(--line); padding: 4px 2px; text-align: center; }
+.holes thead th { background: var(--accent-soft); font-weight: 700; }
+.holes tbody th { color: var(--muted); font-weight: 600; width: 3.2em; }
+.holes th:first-child { width: 3.2em; }
+.holes td:last-child, .holes th:last-child { width: 2.8em; font-weight: 700; }
+.h-good { background: #c8ecd4; color: #1c2420; }
+.h-mid { background: #fff3b0; color: #1c2420; }
+.h-hard { background: #ffd3b0; color: #1c2420; }
+.entry-holes td { padding: 2px; }
+.entry-holes input.hs { width: 100%; min-height: 40px; padding: 0; text-align: center; font-size: 17px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); }
+.photo-btn { width: 100%; justify-content: center; margin: 4px 0 10px; min-height: 52px; font-size: 16px; }
+.read-box { display: grid; gap: 4px; margin-bottom: 8px; }
+.read-row { display: flex; gap: 8px; align-items: center; padding: 6px 0; font-size: 14px; }
+.ok { color: var(--up); font-weight: 600; }

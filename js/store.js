@@ -36,7 +36,12 @@ function supabaseStore() {
         all('players', ['id']), all('events', ['date', 'id']), all('scores', ['event_id', 'player_id']),
         sb.from('settings').select('*').eq('id', 1).maybeSingle().then(must),
       ]);
+      // ホール別スコアは別に読む（004 の SQL を実行する前でも、ほかの画面は動くように）
+      let holeCards = [], holeCardsReady = true;
+      try { holeCards = (await all('hole_cards', ['event_id', 'player_id'])).map(r => ({ eventId: r.event_id, playerId: r.player_id, strokes: r.strokes, source: r.source, updatedAt: r.updated_at })); }
+      catch { holeCardsReady = false; }
       return {
+        holeCards, holeCardsReady,
         players: players.map(toPlayer), events: events.map(toEvent), scores: scores.map(toScore),
         settings: settings ? { ...DEFAULT_SETTINGS, yellowMax: settings.yellow_max, blueMax: settings.blue_max, par: settings.par, seasonStart: settings.season_start ?? null, selectionDate: settings.selection_date ?? null } : { ...DEFAULT_SETTINGS },
       };
@@ -53,6 +58,21 @@ function supabaseStore() {
       if (error) throw new Error('メールアドレスかパスワードが違います');
     },
     async signOut() { await sb.auth.signOut(); },
+    async saveHoleCard({ eventId, playerId, strokes, source }) {
+      must(await sb.from('hole_cards').upsert({ event_id: eventId, player_id: playerId, strokes, source }));
+    },
+    async deleteHoleCard(eventId, playerId) { must(await sb.from('hole_cards').delete().eq('event_id', eventId).eq('player_id', playerId)); },
+    // スコアカードの写真を AI で読み取る（Edge Function read-scorecard）
+    async readScorecard({ image, mediaType, roster }) {
+      const { data, error } = await sb.functions.invoke('read-scorecard', { body: { image, mediaType, roster } });
+      if (error) {
+        let msg = '';
+        try { msg = (await error.context?.json())?.error || ''; } catch { /* 応答が JSON でない */ }
+        if (!msg && /Failed to send|fetch/i.test(error.message)) msg = '読み取りの仕組みがまだ準備されていないか、通信できませんでした';
+        throw new Error(msg || '読み取りに失敗しました。手で入力してください');
+      }
+      return data;
+    },
     async changePassword(password) {
       const { error } = await sb.auth.updateUser({ password });
       if (error) throw new Error(/same/i.test(error.message) ? '今と同じパスワードです' : `変更できませんでした：${error.message}`);
@@ -96,9 +116,16 @@ function demoStore() {
   };
   const clone = x => JSON.parse(JSON.stringify(x));
   return {
-    async load() { return clone(db); },
+    async load() { return { holeCards: [], holeCardsReady: true, ...clone(db) }; },
     async session() { return { user: { email: 'デモ' }, admin: true }; },
     async signIn() {}, async signOut() {}, async changePassword() {},
+    async saveHoleCard(c) { db.holeCards = db.holeCards || []; upsert(db.holeCards, { ...c }, x => x.eventId + '|' + x.playerId); save(); },
+    async deleteHoleCard(e, p) { db.holeCards = (db.holeCards || []).filter(x => !(x.eventId === e && x.playerId === p)); save(); },
+    async readScorecard() {
+      // 画面の通しテスト用：テストが用意した読み取り結果を返す
+      if (window.GOLF_TEST_READ) return JSON.parse(JSON.stringify(window.GOLF_TEST_READ));
+      throw new Error('デモモードでは写真の読み取りは使えません。手で入力してください');
+    },
     async savePlayer(p) { upsert(db.players, { ...p }, x => x.id); save(); },
     async deletePlayer(id) {
       if (db.scores.some(s => s.playerId === id)) throw new Error('この選手にはスコアがあるため、削除できません');
