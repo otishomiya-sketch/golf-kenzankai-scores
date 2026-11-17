@@ -8,7 +8,7 @@
 | 部分 | 使っているもの |
 | --- | --- |
 | 画面 | HTML / CSS / JavaScript だけの1ページ（ビルド不要） |
-| 公開 | GitHub Pages（`main` に push すると自動公開） |
+| 公開 | GitHub Pages（`main` に push すると Actions が `gh-pages` ブランチに書き出して自動公開） |
 | データ | Supabase（PostgreSQL）。読み取りは誰でも、書き込みは管理者だけ（RLS で制限） |
 
 ## 初回の準備（1回だけ・30分程度）
@@ -25,12 +25,10 @@
 6. **Project Settings → API**（または Data API）で **Project URL** と **anon / publishable key** を控える。
    ※ `service_role` / secret key は使わない。どこにも貼らないこと。
 
-### 2. GitHub
-1. リポジトリの **Settings → Secrets and variables → Actions → Variables** に次の2つを登録：
-   - `SUPABASE_URL`：Project URL
-   - `SUPABASE_ANON_KEY`：anon / publishable key
-2. **Settings → Pages → Build and deployment → Source** を **GitHub Actions** にする。
-3. **Actions** タブで `deploy` を実行（または `main` に push）。完了すると公開URLが表示される。
+### 2. 接続先を書く
+[`config.js`](config.js) に Project URL と anon / publishable key を書いて `main` に push する。
+Actions が `gh-pages` ブランチに公開物を書き出し、GitHub Pages（https://otishomiya-sketch.github.io/golf-kenzankai-scores/）で公開される。
+※ anon key は公開して問題ない鍵（書き込みは RLS で管理者だけに制限）。`service_role` / secret key は絶対に書かない。
 
 ### 3. 初期データの取り込み
 1. 公開URLの下にある「管理者ログイン」からログイン。
