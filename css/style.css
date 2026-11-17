@@ -159,3 +159,26 @@ input:focus, select:focus, button:focus-visible { outline: 2px solid var(--accen
 .t-under { color: #d50000 !important; font-weight: 800; }
 .t-nr { color: #e65100 !important; font-weight: 800; }
 .legend b.t-under, .legend b.t-nr { margin-right: 4px; }
+
+/* 印刷・PDF保存（シーズンの記録用） */
+@media print {
+  :root { --bg: #fff; --surface: #fff; --text: #000; --muted: #444; --line: #999; --accent: #1f5e3b; --accent-soft: #e3efe8; --cell-cancel: #d9d9d9; }
+  body { background: #fff; color: #000; font-size: 11px; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .top { position: static; padding: 4px 0; background: #fff !important; color: #000; }
+  .top .brand { color: #000; }
+  #nav, #banner, .foot, #toast, .tabs a:not(.on), .no-print { display: none !important; }
+  main { max-width: none; padding: 0; }
+  .grid-wrap { overflow: visible; max-height: none; border: 0; }
+  .grid { font-size: 7px; width: 100%; table-layout: fixed; }
+  .grid th, .grid td { min-width: 0; padding: 1px 0; overflow: hidden; }
+  .grid .nm { width: 64px; max-width: 64px; }
+  .grid .sum { width: 30px; }
+  .grid .ev-no { font-size: 6px; }
+  .grid .badge { font-size: 6px; padding: 0 1px; }
+  .legend span:last-child { display: none; }
+  .grid thead th, .grid .nm, .grid tfoot td, .grid tfoot th { position: static; }
+  .list { font-size: 11px; }
+  .list th, .list td { padding: 3px 6px; }
+  a { color: #000; text-decoration: none; }
+  .stats { grid-template-columns: repeat(4, 1fr); }
+}

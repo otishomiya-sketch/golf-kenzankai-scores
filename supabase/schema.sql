@@ -41,6 +41,8 @@ create table if not exists public.settings (
   updated_at  timestamptz not null default now()
 );
 alter table public.settings add column if not exists par integer not null default 72;
+alter table public.settings add column if not exists season_start date;     -- 今シーズンの開始日（これより前の回は集計しない）
+alter table public.settings add column if not exists selection_date date;   -- 選手選考の締め日（この日までのスコアで選考）
 insert into public.settings (id) values (1) on conflict (id) do nothing;
 
 -- 管理者（Supabase の Authentication で作ったユーザーの ID を登録する）

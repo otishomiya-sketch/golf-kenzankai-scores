@@ -154,3 +154,63 @@ export function checkScore(value, settings = DEFAULT_SETTINGS) {
   }
   return { ok: true, value: n };
 }
+
+// ---------- シーズンと選手選考（競技会細則（2）・幹事回答 2026-11） ----------
+
+/** シーズン中の開催回だけにする。seasonStart〜（selectionDate があればその日まで） */
+export function seasonEvents(events, { seasonStart = null, selectionDate = null } = {}) {
+  return events.filter(e => (!seasonStart || e.date >= seasonStart) && (!selectionDate || e.date <= selectionDate));
+}
+
+/** 選考の年。選考日があればその年、なければシーズン開始の翌年、どちらもなければ今日から見た次の5月の年 */
+export function selectionYear({ seasonStart = null, selectionDate = null, today }) {
+  if (selectionDate) return Number(selectionDate.slice(0, 4));
+  if (seasonStart) return Number(seasonStart.slice(0, 4)) + 1;
+  const [y, m] = today.split('-').map(Number);
+  return m >= 6 ? y + 1 : y;
+}
+
+export const SELECTION_RECENT = 12;      // 直近12枚
+export const SELECTION_NEW_SEASON = 3;   // 新シーズン（4月〜選考日）に3枚以上
+
+/**
+ * 推薦選手の選考順位。
+ * 合計 = ベスト8 + 直近12枚の平均（小数第1位まで、2位以下切り捨て）。少ない方が上。
+ * 対象：一般で「*」の付かない選手会員、シーズン中12枚以上、4月〜選考日に3枚以上。
+ * 同点：直近12枚の平均が良い方を上（幹事回答【8】A）。
+ * 選考日を過ぎるまでは「暫定」とし、4月以降の枚数が足りない人も順位に含めて印を付ける。
+ */
+export function selectionRanking(players, events, scores, opts) {
+  const { today } = opts;
+  const evs = seasonEvents(events, opts);
+  const targets = players.filter(p => p.category === '一般' && !p.nonMember);
+  const st = playerStats(targets, evs, scores);
+  const year = selectionYear(opts);
+  const newSeasonFrom = `${year}-04-01`;
+  const dateOf = new Map(evs.map(e => [e.id, e.date]));
+  const final = !!opts.selectionDate && today >= opts.selectionDate;
+
+  const rows = [...st.values()].map(s => {
+    const recent = s.rounds.slice(-SELECTION_RECENT);
+    const recentSum = recent.reduce((a, r) => a + r.score, 0);
+    const avg12 = recent.length >= SELECTION_RECENT ? Math.floor(recentSum * 10 / SELECTION_RECENT) / 10 : null;
+    const newSeason = s.rounds.filter(r => dateOf.get(r.eventId) >= newSeasonFrom).length;
+    return {
+      ...s,
+      avg12,
+      points: avg12 === null || s.best8 === null ? null : Math.round((s.best8 + avg12) * 10) / 10,
+      newSeason,
+      newSeasonOk: newSeason >= SELECTION_NEW_SEASON,
+      recentEventIds: new Set(recent.map(r => r.eventId)),
+    };
+  });
+
+  const key = (a, b) => a.points - b.points || a.avg12 - b.avg12;
+  const pool = rows.filter(r => r.points !== null && (!final || r.newSeasonOk));
+  const ranked = pool.sort((a, b) => key(a, b) || compareRecent(a, b) || compareNumber(a.player, b.player));
+  let prev = null;
+  ranked.forEach((r, i) => { r.rank = prev && key(prev, r) === 0 ? prev.rank : i + 1; prev = r; });
+  const excluded = rows.filter(r => !pool.includes(r))
+    .sort((a, b) => b.count - a.count || compareNumber(a.player, b.player));
+  return { ranked, excluded, final, newSeasonFrom, year };
+}

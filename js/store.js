@@ -38,7 +38,7 @@ function supabaseStore() {
       ]);
       return {
         players: players.map(toPlayer), events: events.map(toEvent), scores: scores.map(toScore),
-        settings: settings ? { ...DEFAULT_SETTINGS, yellowMax: settings.yellow_max, blueMax: settings.blue_max, par: settings.par } : { ...DEFAULT_SETTINGS },
+        settings: settings ? { ...DEFAULT_SETTINGS, yellowMax: settings.yellow_max, blueMax: settings.blue_max, par: settings.par, seasonStart: settings.season_start ?? null, selectionDate: settings.selection_date ?? null } : { ...DEFAULT_SETTINGS },
       };
     },
     async session() {
@@ -60,7 +60,7 @@ function supabaseStore() {
     async replaceEventScores(eventId, rows) {
       must(await sb.rpc('replace_event_scores', { p_event_id: eventId, p_scores: rows.map(r => ({ player_id: r.playerId, score: r.score, nr: !!r.nr })) }));
     },
-    async saveSettings(s) { must(await sb.from('settings').upsert({ id: 1, yellow_max: s.yellowMax, blue_max: s.blueMax, par: s.par, updated_at: new Date().toISOString() })); },
+    async saveSettings(s) { must(await sb.from('settings').upsert({ id: 1, yellow_max: s.yellowMax, blue_max: s.blueMax, par: s.par, season_start: s.seasonStart || null, selection_date: s.selectionDate || null, updated_at: new Date().toISOString() })); },
     async importData({ players, events, scores }) {
       const chunks = (arr, n = 500) => Array.from({ length: Math.ceil(arr.length / n) }, (_, i) => arr.slice(i * n, i * n + n));
       for (const c of chunks(players || [])) must(await sb.from('players').upsert(c.map(fromPlayer)));

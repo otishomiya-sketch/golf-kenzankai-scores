@@ -2,6 +2,7 @@
 import {
   CATEGORIES, RANK_MIN_ROUNDS, displayName, sortEvents, playerStats, rankCategory, overallStats,
   scoreColor, scoreMark, fmtDecimal, fmtInt, checkScore, compareNumber, DEFAULT_SETTINGS, CATEGORY_LABEL,
+  seasonEvents, selectionRanking, SELECTION_RECENT, SELECTION_NEW_SEASON,
 } from './stats.js';
 import { parseCsv, detectKind, recordsToData, playersCsv, eventsCsv, scoresCsv, defaultLabel } from './csv.js';
 import { store, DEMO, MEMBER_EMAIL } from './store.js';
@@ -33,12 +34,14 @@ const go = hash => { if (location.hash === hash) render(); else location.hash = 
 async function reload() {
   state.data = await store.load();
   state.data.settings = { ...DEFAULT_SETTINGS, ...state.data.settings };
-  state.stats = playerStats(state.data.players, state.data.events, state.data.scores);
-  state.overall = overallStats(state.data.events, state.data.scores);
+  // 順位・成績一覧などは「今シーズン」の回だけで集計する（選考日以降の回も、次の切り替えまでは表示する）
+  state.events = seasonEvents(state.data.events, { seasonStart: state.data.settings.seasonStart });
+  state.stats = playerStats(state.data.players, state.events, state.data.scores);
+  state.overall = overallStats(state.events, state.data.scores);
 }
 
 function nav(active) {
-  const items = signedOut() ? [] : [['ranking', '#/', '順位表'], ['grid', '#/grid', '成績一覧']];
+  const items = signedOut() ? [] : [['ranking', '#/', '順位表'], ['grid', '#/grid', '成績一覧'], ['selection', '#/selection', '選手選考']];
   if (state.session.admin) items.push(['input', '#/input', 'スコア入力'], ['admin', '#/admin', '管理']);
   document.getElementById('nav').innerHTML = items.map(([k, href, label]) =>
     `<a href="${href}" class="${k === active ? 'on' : ''}">${label}</a>`).join('');
@@ -56,7 +59,7 @@ function viewRanking(q) {
   const { ranked, unranked } = rankCategory(state.stats, cat);
   const shownUnranked = showZero ? unranked : unranked.filter(s => s.count > 0);
   const o = state.overall;
-  const last = sortEvents(state.data.events).filter(e => !e.cancelled && o.perEvent.get(e.id) > 0).pop();
+  const last = sortEvents(state.events).filter(e => !e.cancelled && o.perEvent.get(e.id) > 0).pop();
   const row = (s, rank) => `<tr>
     <td class="rank">${rank}</td>
     <td class="name"><a href="#/p/${encodeURIComponent(s.player.id)}">${h(displayName(s.player))}</a></td>
@@ -83,7 +86,7 @@ function viewRanking(q) {
 // ---------- 2. 成績一覧（選手×開催回） ----------
 function viewGrid(q) {
   const cat = CATEGORIES.includes(q.get('c')) ? q.get('c') : '';
-  const events = sortEvents(state.data.events);
+  const events = sortEvents(state.events);
   const scoreMap = new Map(state.data.scores.map(s => [s.eventId + '|' + s.playerId, s]));
   const o = state.overall;
   const s = state.data.settings;
@@ -117,6 +120,32 @@ function viewGrid(q) {
       <span><span class="badge">CT</span> チャンピオンティー</span><span>横にスクロールできます</span>
     </div>
     <div class="grid-wrap"><table class="grid"><thead>${head}</thead><tbody>${body}</tbody><tfoot>${foot}</tfoot></table></div>`;
+}
+
+// ---------- 選手選考（細則（2）：ベスト8＋直近12枚の平均） ----------
+function todayJst() { return new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Tokyo' }); }
+function viewSelection() {
+  const s = state.data.settings;
+  const r = selectionRanking(state.data.players, state.data.events, state.data.scores, { seasonStart: s.seasonStart, selectionDate: s.selectionDate, today: todayJst() });
+  const fmtDate = d => d ? `${Number(d.slice(5, 7))}/${Number(d.slice(8, 10))}` : '';
+  const head = r.final
+    ? `<div class="notice">選考確定（${h(s.selectionDate.replaceAll('-', '/'))} 締め）</div>`
+    : `<div class="notice">暫定順位です。${s.selectionDate ? `選考の締め日：${h(s.selectionDate.replaceAll('-', '/'))}` : '選考の締め日は未定です'}。
+       締め日の時点で ${r.year}年4月以降のスコアが${SELECTION_NEW_SEASON}枚に満たない人は対象外になります。</div>`;
+  const row = x => `<tr>
+    <td class="rank">${x.rank}</td>
+    <td class="name"><a href="#/p/${encodeURIComponent(x.player.id)}">${h(displayName(x.player))}</a></td>
+    <td>${fmtInt(x.best8)}</td><td>${x.avg12.toFixed(1)}</td><td><b>${x.points.toFixed(1)}</b></td>
+    <td class="${x.newSeasonOk ? '' : 'warn'}">${x.newSeason}/${SELECTION_NEW_SEASON}</td></tr>`;
+  return `<h1>選手選考 <span class="small muted">${r.year}年</span></h1>${head}
+    <table class="list">
+      <thead><tr><th class="rank">順位</th><th class="name">氏名</th><th>ベスト8</th><th>12枚平均</th><th>合計</th><th>4月〜</th></tr></thead>
+      <tbody>${r.ranked.map(row).join('') || `<tr><td colspan="6" class="name muted">対象者はまだいません</td></tr>`}</tbody>
+    </table>
+    <p class="small muted">合計＝ベスト8＋直近${SELECTION_RECENT}枚の平均（小数第1位まで・以下切り捨て）。少ない順。同点は12枚平均の良い方が上。
+      対象は選手会員（一般で「*」の付かない方）で、今シーズン${SELECTION_RECENT}枚以上。「4月〜」は${fmtDate(r.newSeasonFrom)}以降の枚数。</p>
+    ${r.excluded.length ? `<h2>対象外（${r.final ? `${SELECTION_RECENT}枚未満、または4月以降${SELECTION_NEW_SEASON}枚未満` : `${SELECTION_RECENT}枚未満`}）</h2>
+      <p class="small">${r.excluded.map(x => `${h(displayName(x.player))}（${x.count}枚）`).join('、')}</p>` : ''}`;
 }
 
 // ---------- 3. 選手ページ ----------
@@ -299,9 +328,9 @@ function nextId(prefix, list) {
 }
 
 function viewAdmin(q) {
-  const tab = ['players', 'events', 'settings', 'csv'].includes(q.get('t')) ? q.get('t') : 'events';
-  const tabs = [['events', '開催回'], ['players', '選手'], ['settings', '色分け'], ['csv', 'CSV']];
-  const body = { players: adminPlayers, events: adminEvents, settings: adminSettings, csv: adminCsv }[tab]();
+  const tab = ['players', 'events', 'settings', 'season', 'csv'].includes(q.get('t')) ? q.get('t') : 'events';
+  const tabs = [['events', '開催回'], ['players', '選手'], ['season', 'シーズン'], ['settings', '色分け'], ['csv', 'CSV']];
+  const body = { players: adminPlayers, events: adminEvents, settings: adminSettings, season: adminSeason, csv: adminCsv }[tab]();
   return `<h1>管理</h1><div class="tabs">${tabs.map(([k, l]) => `<a class="${k === tab ? 'on' : ''}" href="#/admin?t=${k}">${l}</a>`).join('')}</div>${body}`;
 }
 
@@ -362,6 +391,27 @@ function settingsPreview(form) {
   const el = document.getElementById('settings-preview');
   if (!el) return;
   el.innerHTML = y < b ? `<span><i class="c-yellow"></i>${y}以下</span><span><i class="c-blue"></i>${y + 1}〜${b}</span>` : '<span class="err">水色の上限は黄色の上限より大きくしてください</span>';
+}
+
+function adminSeason() {
+  const s = state.data.settings;
+  return `<form class="card" data-form="season" style="max-width:460px">
+    <label class="f">今シーズンの開始日（これより前の回は、順位表・成績一覧に出さない）<input type="date" name="seasonStart" value="${h(s.seasonStart || '')}"></label>
+    <label class="f">選手選考の締め日（決まったら入れる。この日までのスコアで選考）<input type="date" name="selectionDate" value="${h(s.selectionDate || '')}"></label>
+    <button class="btn">保存</button></form>
+    <h2>シーズンの切り替え手順</h2>
+    <ol class="small">
+      <li>選考の締め日を入れて保存し、「選手選考」画面で結果を確認する</li>
+      <li>下のボタンで、順位表・成績一覧・選手選考を <b>PDFに保存</b> する（印刷画面で「PDFに保存」を選ぶ）</li>
+      <li>「CSV」タブで3つのファイルを書き出して保管する</li>
+      <li>新しいシーズンの開始日（締め日の翌日など）を入れ、選考の締め日を空にして保存する</li>
+    </ol>
+    <div class="row">
+      <a class="btn sub" href="#/?print=1">順位表を印刷</a>
+      <a class="btn sub" href="#/grid?print=1">成績一覧を印刷</a>
+      <a class="btn sub" href="#/selection?print=1">選手選考を印刷</a>
+    </div>
+    <p class="small muted">過去のスコアは消さずに残ります。開始日を前の日付に戻せば、前のシーズンをもう一度表示できます。</p>`;
 }
 
 const pendingImport = { files: [], data: null };
@@ -441,9 +491,13 @@ function render() {
   nav(page === 'p' ? 'ranking' : page);
   const views = {
     ranking: () => viewRanking(q), grid: () => viewGrid(q), p: () => viewPlayer(decodeURIComponent(parts[1] || '')),
-    input: () => viewInput(q), admin: () => viewAdmin(q), login: viewLogin,
+    input: () => viewInput(q), admin: () => viewAdmin(q), login: viewLogin, selection: viewSelection,
   };
   $app.innerHTML = (views[page] || views.ranking)();
+  // 用紙：成績一覧は列が多いので A3 横、それ以外は A4 縦
+  document.getElementById('page-size').textContent = `@page { size: ${page === 'grid' ? 'A3 landscape' : 'A4 portrait'}; margin: 8mm; }`;
+  // 「印刷」ボタンから来たときは、描画のあと印刷画面を開く（PDF保存用）
+  if (q.get('print') === '1') setTimeout(() => window.print(), 300);
   const sf = document.querySelector('form[data-form="settings"]'); if (sf) settingsPreview(sf);
 }
 
@@ -570,8 +624,13 @@ document.addEventListener('submit', async ev => {
     if (e.cancelled && (state.overall.perEvent.get(e.id) || 0) > 0 && !confirm('この回にはスコアが入っています。中止にしてもスコアは消えず、集計にも残ります。よろしいですか？')) return;
     return withBusy(async () => { await store.saveEvent(e); await reload(); toast(f.dataset.new ? `${e.label}を追加しました` : '保存しました'); });
   }
+  if (kind === 'season') {
+    const s = { ...state.data.settings, seasonStart: f.seasonStart.value || null, selectionDate: f.selectionDate.value || null };
+    if (s.seasonStart && s.selectionDate && s.selectionDate < s.seasonStart) { toast('締め日はシーズン開始日より後にしてください', true); return; }
+    return withBusy(async () => { await store.saveSettings(s); await reload(); toast('保存しました'); });
+  }
   if (kind === 'settings') {
-    const s = { yellowMax: Number(f.yellowMax.value), blueMax: Number(f.blueMax.value), par: Number(f.par.value) };
+    const s = { ...state.data.settings, yellowMax: Number(f.yellowMax.value), blueMax: Number(f.blueMax.value), par: Number(f.par.value) };
     if (!(s.yellowMax < s.blueMax)) { toast('水色の上限は黄色の上限より大きくしてください', true); return; }
     return withBusy(async () => { await store.saveSettings(s); await reload(); toast('保存しました'); });
   }

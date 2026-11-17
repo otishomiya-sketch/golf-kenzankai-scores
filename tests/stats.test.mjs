@@ -5,7 +5,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
-import { playerStats, rankCategory, overallStats, fmtDecimal, scoreColor, scoreMark, checkScore, displayName, DEFAULT_SETTINGS } from '../js/stats.js';
+import { selectionRanking, seasonEvents, selectionYear, playerStats, rankCategory, overallStats, fmtDecimal, scoreColor, scoreMark, checkScore, displayName, DEFAULT_SETTINGS } from '../js/stats.js';
 import { parseCsv, recordsToData, detectKind, scoresCsv, playersCsv, eventsCsv } from '../js/csv.js';
 
 const P = (id, number, category = '一般', nonMember = false) => ({ id, number, name: id, category, nonMember });
@@ -113,6 +113,33 @@ test('CSV：NR 列あり・なしの両方を読める', () => {
   assert.equal(without[0].nr, false);
   const out = scoresCsv(withNr, [{ id: 'E1', date: '2026-01-01' }], [{ id: 'P1', name: 'a' }]);
   assert.match(out, /E1,2026-01-01,P1,a,120,1/);
+});
+
+test('選手選考：ベスト8＋直近12枚平均（切り捨て）。12枚未満と「*」は対象外、締め日後は4月以降3枚未満も対象外', () => {
+  const players = [P('A', '1'), P('B', '2'), P('C', '3'), { ...P('D', '4'), nonMember: true }, P('W', '1', '女子')];
+  // 2026-05〜2027-05 のシーズン。14回分（最後の3回は2027年4〜5月）
+  const dates = ['2026-06-01','2026-06-08','2026-06-15','2026-06-22','2026-07-01','2026-07-08','2026-07-15','2026-08-01','2026-08-08','2026-09-01','2026-10-01','2027-04-10','2027-04-20','2027-05-01'];
+  const events = dates.map((d, i) => E(`E${i}`, d));
+  const scores = [];
+  const add = (pid, list, from = 0) => list.forEach((s, i) => scores.push({ eventId: `E${from + i}`, playerId: pid, score: s }));
+  add('A', [80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 80, 81, 82]);   // 14枚、4月〜3枚
+  add('B', [80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 91]);            // 12枚、4月〜1枚
+  add('C', [80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90]);                // 11枚 → 対象外
+  add('D', [70, 70, 70, 70, 70, 70, 70, 70, 70, 70, 70, 70, 70, 70]);    // 「*」→ 対象外
+  add('W', [70, 70, 70, 70, 70, 70, 70, 70, 70, 70, 70, 70, 70, 70]);    // 女子 → 対象外
+  const opts = { seasonStart: '2026-05-17', selectionDate: '2027-05-15', today: '2027-01-10' };
+  let r = selectionRanking(players, events, scores, opts);
+  const a = r.ranked.find(x => x.player.id === 'A');
+  // A：ベスト8 = 80+80+81+81+82+82+83+84 = 653、直近12 = 82..90,80,81,82 の合計 1017 → 84.75 → 84.7（切り捨て）
+  assert.equal(a.best8, 653); assert.equal(a.avg12, 84.7); assert.equal(a.points, 737.7); assert.equal(a.newSeason, 3);
+  assert.deepEqual(r.ranked.map(x => x.player.id), ['A', 'B']);        // 締め日前は B も暫定で入る
+  assert.equal(r.final, false);
+  assert.deepEqual(r.excluded.map(x => x.player.id), ['C']);
+  r = selectionRanking(players, events, scores, { ...opts, today: '2027-05-15' });
+  assert.equal(r.final, true);
+  assert.deepEqual(r.ranked.map(x => x.player.id), ['A']);             // 締め日後は4月以降1枚の B が外れる
+  assert.equal(selectionYear({ today: '2026-11-17' }), 2027);
+  assert.equal(seasonEvents(events, { seasonStart: '2027-01-01' }).length, 3);
 });
 
 test('表示名：未入会・他クラブは「*」', () => {
