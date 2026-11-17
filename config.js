@@ -8,4 +8,6 @@ window.GOLF_CONFIG = {
   memberEmail: 'kenzankai.member@example.com',
   // スコアカード読み取りの Edge Function の名前（Supabase の Edge Functions の一覧に出ている名前）
   scorecardFunction: 'bright-processor',
+  // AI で写真を読み取る機能（Claude API の利用料がかかる）。true にすると「写真から読み取る」ボタンが出る
+  aiScorecard: false,
 };

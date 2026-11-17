@@ -5,6 +5,8 @@ const cfg = window.GOLF_CONFIG || {};
 export const DEMO = !(cfg.supabaseUrl && cfg.supabaseAnonKey);
 /** 会員共通の閲覧用アカウント（会員はパスワードだけ入力する） */
 export const MEMBER_EMAIL = cfg.memberEmail || '';
+/** スコアカードの AI 読み取り（費用がかかるので既定はオフ。デモモードではテスト用に使える） */
+export const AI_SCORECARD = DEMO || cfg.aiScorecard === true;
 
 // ---- 行の変換（DB の列名 ⇔ 画面で使う名前） ----
 const toPlayer = r => ({ id: r.id, number: r.number, name: r.name, category: r.category, nonMember: r.non_member });

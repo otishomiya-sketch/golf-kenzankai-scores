@@ -82,7 +82,7 @@ GOLF_DATA_DIR=<CSVのフォルダ> node tests/e2e.cjs   # 画面の通しテス�
 既存のデータベースでは [`supabase/003_season_selection.sql`](supabase/003_season_selection.sql) を1回実行してから使う。
 
 ## スコアカード（ホール別の分析）
-- 選手ページの「📷 スコアカードを登録」から、写真を撮る（または選ぶ）と AI が18ホールの打数を読み取る。確認・修正してから保存
+- 選手ページの「📝 スコアカードを登録」から18ホールの打数を入力する。AI の写真読み取りは費用がかかるため既定でオフ（`config.js` の `aiScorecard: true` で有効。Edge Function と ANTHROPIC_API_KEY が必要）
 - 写真は保存しない。ホール別のスコアは分析だけに使い、順位には影響しない
 - 会員（共通アカウント）も登録・上書きできる。すべての登録は `hole_card_log` に自動で残り、管理者だけが見られる（削除も管理者だけ）
 - AI の読み取りは Supabase Edge Function [`read-scorecard`](supabase/functions/read-scorecard/index.ts)（Claude API）。24時間で150回まで

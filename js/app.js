@@ -5,7 +5,7 @@ import {
   seasonEvents, selectionRanking, SELECTION_RECENT, SELECTION_NEW_SEASON,
 } from './stats.js';
 import { parseCsv, detectKind, recordsToData, playersCsv, eventsCsv, scoresCsv, defaultLabel } from './csv.js';
-import { store, DEMO, MEMBER_EMAIL } from './store.js';
+import { store, DEMO, MEMBER_EMAIL, AI_SCORECARD } from './store.js';
 import { gameBoard } from './game.js';
 import { playerAnalysis, insights } from './analysis.js';
 import { holeAnalysis, holeInsights } from './holes.js';
@@ -250,7 +250,7 @@ const holeCardsOf = pid => (state.data.holeCards || []).filter(c => c.playerId =
 
 function holeSection(st) {
   if (!st.count) return '';
-  const btn = `<a class="btn sub sm" href="#/card?p=${encodeURIComponent(st.player.id)}">📷 スコアカードを登録</a>`;
+  const btn = `<a class="btn sub sm" href="#/card?p=${encodeURIComponent(st.player.id)}">📝 スコアカードを登録</a>`;
   if (!state.data.holeCardsReady) return '';
   const cards = holeCardsOf(st.player.id);
   const a = holeAnalysis(cards);
@@ -322,12 +322,12 @@ function viewCard(q) {
       </div>` : '';
 
   return `<h1>スコアカードの登録</h1>
-    <p class="small muted" style="margin-top:-6px">写真から18ホールのスコアを読み取ります。写真は保存しません。ホール別のスコアは分析にだけ使い、順位には影響しません。</p>
+    <p class="small muted" style="margin-top:-6px">${AI_SCORECARD ? '写真から18ホールのスコアを読み取ります。写真は保存しません。' : 'スコアカードを見ながら、18ホールの打数を入力してください。'}ホール別のスコアは分析にだけ使い、順位には影響しません。</p>
     <div class="row">
       <label class="f grow">選手<select id="card-player">${players.map(p => `<option value="${h(p.id)}" ${p.id === pid ? 'selected' : ''}>${h(displayName(p))}</option>`).join('')}</select></label>
       <label class="f grow">ラウンド<select id="card-event">${rounds.map(e => `<option value="${h(e.id)}" ${e.id === eid ? 'selected' : ''}>${h(e.label)}（${h(e.date)}）${hasCard(e.id) ? ' ✓登録済み' : ''}</option>`).join('')}</select></label>
     </div>
-    <label class="btn photo-btn">📷 スコアカードを撮る／写真を選ぶ<input type="file" id="card-photo" accept="image/*" hidden></label>
+    ${AI_SCORECARD ? '<label class="btn photo-btn">📷 スコアカードを撮る／写真を選ぶ<input type="file" id="card-photo" accept="image/*" hidden></label>' : ''}
     ${readBox}
     <h2>${h(player.name)}さんの打数 <span class="small muted">公式スコア ${official ?? '—'}</span></h2>
     <div class="holes-wrap">${grid(0, 9, 'OUT', outT)}${grid(9, 18, 'IN', inT)}</div>
