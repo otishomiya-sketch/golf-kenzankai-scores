@@ -53,6 +53,10 @@ function supabaseStore() {
       if (error) throw new Error('メールアドレスかパスワードが違います');
     },
     async signOut() { await sb.auth.signOut(); },
+    async changePassword(password) {
+      const { error } = await sb.auth.updateUser({ password });
+      if (error) throw new Error(/same/i.test(error.message) ? '今と同じパスワードです' : `変更できませんでした：${error.message}`);
+    },
     async savePlayer(p) { must(await sb.from('players').upsert({ ...fromPlayer(p), updated_at: new Date().toISOString() })); },
     async deletePlayer(id) { must(await sb.from('players').delete().eq('id', id)); },
     async saveEvent(e) { must(await sb.from('events').upsert({ ...fromEvent(e), updated_at: new Date().toISOString() })); },
@@ -94,7 +98,7 @@ function demoStore() {
   return {
     async load() { return clone(db); },
     async session() { return { user: { email: 'デモ' }, admin: true }; },
-    async signIn() {}, async signOut() {},
+    async signIn() {}, async signOut() {}, async changePassword() {},
     async savePlayer(p) { upsert(db.players, { ...p }, x => x.id); save(); },
     async deletePlayer(id) {
       if (db.scores.some(s => s.playerId === id)) throw new Error('この選手にはスコアがあるため、削除できません');

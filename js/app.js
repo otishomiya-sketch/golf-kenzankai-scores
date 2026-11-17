@@ -48,7 +48,7 @@ function nav(active) {
     `<a href="${href}" class="${k === active ? 'on' : ''}">${label}</a>`).join('');
   const foot = document.getElementById('foot');
   if (DEMO) foot.innerHTML = '';
-  else if (state.session.admin) foot.innerHTML = `${h(state.session.user.email)}（管理者） ・ <a href="#" data-act="logout">ログアウト</a>`;
+  else if (state.session.admin) foot.innerHTML = `${h(state.session.user.email)}（管理者） ・ <a href="#/account">パスワード変更</a> ・ <a href="#" data-act="logout">ログアウト</a>`;
   else if (state.session.user) foot.innerHTML = '会員としてログイン中 ・ <a href="#" data-act="logout">ログアウト</a>';
   else foot.innerHTML = active === 'login' ? '<a href="#/">会員の方はこちら</a>' : '<a href="#/login">管理者ログイン</a>';
 }
@@ -540,6 +540,15 @@ function viewMemberLogin() {
     <button class="btn">見る</button></form>`;
 }
 
+// 管理者が自分のパスワードを変える（仮パスワードで作ったアカウント用）
+function viewAccount() {
+  return `<h1>パスワード変更</h1><form class="card" data-form="password" style="max-width:380px">
+    <p class="small muted" style="margin-top:0">${h(state.session.user?.email || '')} のパスワードを変更します。10文字以上で、英字と数字を混ぜてください。</p>
+    <label class="f">新しいパスワード<input type="password" name="pw1" autocomplete="new-password" minlength="10" required></label>
+    <label class="f">もう一度<input type="password" name="pw2" autocomplete="new-password" minlength="10" required></label>
+    <button class="btn">変更する</button></form>`;
+}
+
 function viewLogin() {
   return `<h1>管理者ログイン</h1><form class="card" data-form="login" style="max-width:380px">
     <label class="f">メールアドレス<input type="email" name="email" autocomplete="username" required></label>
@@ -560,12 +569,12 @@ function render() {
   const page = parts[0] || 'ranking';
   if (signedOut() && page !== 'login') { nav('member-login'); $app.innerHTML = viewMemberLogin(); return; }
   if (!state.data && page !== 'login') { $app.innerHTML = '<p class="muted pad">読み込み中…</p>'; return; }
-  const needAdmin = ['input', 'admin'].includes(page);
+  const needAdmin = ['input', 'admin', 'account'].includes(page);
   if (needAdmin && !state.session.admin) { go('#/login'); return; }
   nav(page === 'p' ? 'ranking' : page);
   const views = {
     ranking: () => viewRanking(q), grid: () => viewGrid(q), p: () => viewPlayer(decodeURIComponent(parts[1] || '')),
-    input: () => viewInput(q), admin: () => viewAdmin(q), login: viewLogin, selection: viewSelection,
+    input: () => viewInput(q), admin: () => viewAdmin(q), login: viewLogin, selection: viewSelection, account: viewAccount,
   };
   $app.innerHTML = (views[page] || views.ranking)();
   // 用紙：成績一覧は列が多いので A3 横、それ以外は A4 縦
@@ -700,6 +709,12 @@ document.addEventListener('submit', async ev => {
     const e = { id: f.dataset.id, date: f.date.value, label: f.label.value.trim() || defaultLabel(f.date.value), roundNo: rn ? Number(rn) : null, kind: f.kind.value, cancelled: f.cancelled.checked };
     if (e.cancelled && (state.overall.perEvent.get(e.id) || 0) > 0 && !confirm('この回にはスコアが入っています。中止にしてもスコアは消えず、集計にも残ります。よろしいですか？')) return;
     return withBusy(async () => { await store.saveEvent(e); await reload(); toast(f.dataset.new ? `${e.label}を追加しました` : '保存しました'); });
+  }
+  if (kind === 'password') {
+    const pw = f.pw1.value;
+    if (pw !== f.pw2.value) { toast('2つの入力が一致しません', true); return; }
+    if (pw.length < 10 || !/[A-Za-z]/.test(pw) || !/\d/.test(pw)) { toast('10文字以上で、英字と数字を混ぜてください', true); return; }
+    return withBusy(async () => { await store.changePassword(pw); toast('パスワードを変更しました'); go('#/input'); });
   }
   if (kind === 'season') {
     const s = { ...state.data.settings, seasonStart: f.seasonStart.value || null, selectionDate: f.selectionDate.value || null };
