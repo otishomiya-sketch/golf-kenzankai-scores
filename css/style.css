@@ -154,3 +154,8 @@ input:focus, select:focus, button:focus-visible { outline: 2px solid var(--accen
   background: #222; color: #fff; padding: 10px 16px; border-radius: 8px; z-index: 50; max-width: calc(100% - 32px); font-size: 14px;
 }
 #toast.error { background: var(--danger); color: #fff; }
+
+/* 文字の印：アンダー（赤）・途中棄権 NR（オレンジ） */
+.t-under { color: #d50000 !important; font-weight: 800; }
+.t-nr { color: #e65100 !important; font-weight: 800; }
+.legend b.t-under, .legend b.t-nr { margin-right: 4px; }

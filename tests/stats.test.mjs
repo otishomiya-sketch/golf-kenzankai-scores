@@ -5,7 +5,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
-import { playerStats, rankCategory, overallStats, fmtDecimal, scoreColor, checkScore, displayName, DEFAULT_SETTINGS } from '../js/stats.js';
+import { playerStats, rankCategory, overallStats, fmtDecimal, scoreColor, scoreMark, checkScore, displayName, DEFAULT_SETTINGS } from '../js/stats.js';
 import { parseCsv, recordsToData, detectKind, scoresCsv, playersCsv, eventsCsv } from '../js/csv.js';
 
 const P = (id, number, category = '一般', nonMember = false) => ({ id, number, name: id, category, nonMember });
@@ -85,6 +85,23 @@ test('色分けと入力チェック', () => {
   assert.equal(checkScore('85').warn, undefined);
   assert.equal(checkScore('8a').ok, false);
   assert.equal(checkScore('').empty, true);
+});
+
+test('文字の印：パー未満は赤（アンダー）、NR はオレンジ（NR を優先）', () => {
+  const st = { ...DEFAULT_SETTINGS, par: 72 };
+  assert.equal(scoreMark({ score: 71 }, st), 'under');
+  assert.equal(scoreMark({ score: 72 }, st), null);
+  assert.equal(scoreMark({ score: 120, nr: true }, st), 'nr');
+  assert.equal(scoreMark({ score: 70, nr: true }, st), 'nr');
+});
+
+test('CSV：NR 列あり・なしの両方を読める', () => {
+  const withNr = recordsToData('scores', parseCsv('開催ID,日付,選手ID,氏名,スコア,NR\nE1,2026-01-01,P1,a,120,1\n').records).items;
+  assert.equal(withNr[0].nr, true);
+  const without = recordsToData('scores', parseCsv('開催ID,日付,選手ID,氏名,スコア\nE1,2026-01-01,P1,a,80\n').records).items;
+  assert.equal(without[0].nr, false);
+  const out = scoresCsv(withNr, [{ id: 'E1', date: '2026-01-01' }], [{ id: 'P1', name: 'a' }]);
+  assert.match(out, /E1,2026-01-01,P1,a,120,1/);
 });
 
 test('表示名：未入会・他クラブは「*」', () => {

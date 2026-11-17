@@ -1,7 +1,7 @@
 // 画面。URL の「#/…」で画面を切り替える1ページのアプリ。
 import {
   CATEGORIES, RANK_MIN_ROUNDS, displayName, sortEvents, playerStats, rankCategory, overallStats,
-  scoreColor, fmtDecimal, fmtInt, checkScore, compareNumber, DEFAULT_SETTINGS,
+  scoreColor, scoreMark, fmtDecimal, fmtInt, checkScore, compareNumber, DEFAULT_SETTINGS, CATEGORY_LABEL,
 } from './stats.js';
 import { parseCsv, detectKind, recordsToData, playersCsv, eventsCsv, scoresCsv, defaultLabel } from './csv.js';
 import { store, DEMO } from './store.js';
@@ -12,6 +12,9 @@ const state = { data: null, stats: null, overall: null, session: { user: null, a
 // ---------- 共通 ----------
 const h = v => String(v ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const colorClass = s => { const c = scoreColor(s, state.data.settings); return c ? `c-${c}` : ''; };
+// 文字の印：アンダー＝赤、NR（途中棄権）＝オレンジ
+const markClass = s => { const m = scoreMark(s, state.data.settings); return m ? `t-${m}` : ''; };
+const markTitle = s => s.nr ? '途中棄権（NR）' : s.score < state.data.settings.par ? 'アンダー' : '';
 const kindBadge = e => e.kind === 'CT' ? '<span class="badge">CT</span>' : e.kind === '納会' ? '<span class="badge nk">納会</span>' : '';
 
 function toast(msg, isError = false) {
@@ -64,7 +67,7 @@ function viewRanking(q) {
       <div class="stat"><b>${fmtDecimal(o.average, 2)}</b><span>1回平均（人）</span></div>
       <div class="stat"><b>${last ? h(last.label) : '—'}</b><span>最新の開催</span></div>
     </div>
-    <div class="tabs" role="tablist">${CATEGORIES.map(c => `<a role="tab" aria-selected="${c === cat}" class="${c === cat ? 'on' : ''}" href="#/?c=${encodeURIComponent(c)}">${c}</a>`).join('')}</div>
+    <div class="tabs" role="tablist">${CATEGORIES.map(c => `<a role="tab" aria-selected="${c === cat}" class="${c === cat ? 'on' : ''}" href="#/?c=${encodeURIComponent(c)}">${CATEGORY_LABEL[c]}</a>`).join('')}</div>
     <table class="list">
       <thead><tr><th class="rank">順位</th><th class="name">氏名</th><th>ベスト8</th><th>平均⑧</th><th>回数</th><th class="hide-sm">全平均</th></tr></thead>
       <tbody>
@@ -80,7 +83,7 @@ function viewRanking(q) {
 function viewGrid(q) {
   const cat = CATEGORIES.includes(q.get('c')) ? q.get('c') : '';
   const events = sortEvents(state.data.events);
-  const scoreMap = new Map(state.data.scores.map(s => [s.eventId + '|' + s.playerId, s.score]));
+  const scoreMap = new Map(state.data.scores.map(s => [s.eventId + '|' + s.playerId, s]));
   const o = state.overall;
   const s = state.data.settings;
   const cats = cat ? [cat] : CATEGORIES;
@@ -90,13 +93,14 @@ function viewGrid(q) {
   const body = cats.map(c => {
     const players = state.data.players.filter(p => p.category === c).sort(compareNumber);
     if (!players.length) return '';
-    return `<tr class="cat"><td class="nm">${c}</td><td colspan="${events.length + 6}"></td></tr>` + players.map(p => {
+    return `<tr class="cat"><td class="nm">${CATEGORY_LABEL[c]}</td><td colspan="${events.length + 6}"></td></tr>` + players.map(p => {
       const st = state.stats.get(p.id);
       return `<tr><td class="nm"><span class="num">${h(p.number)}</span><a href="#/p/${encodeURIComponent(p.id)}">${h(displayName(p))}</a></td>
         ${events.map(e => {
           const v = scoreMap.get(e.id + '|' + p.id);
-          const cls = e.cancelled ? 'c-cancel' : v != null ? colorClass(v) : '';
-          return `<td class="${cls}">${v ?? ''}</td>`;
+          if (!v) return `<td class="${e.cancelled ? 'c-cancel' : ''}"></td>`;
+          const cls = (e.cancelled ? 'c-cancel' : colorClass(v.score)) + ' ' + markClass(v);
+          return `<td class="${cls}" ${markTitle(v) ? `title="${markTitle(v)}"` : ''}>${v.score}</td>`;
         }).join('')}
         <td class="sum">${fmtInt(st.best7)}</td><td class="sum">${fmtInt(st.best8)}</td><td class="sum">${fmtDecimal(st.avg8, 3)}</td>
         <td class="sum">${st.count ? fmtInt(st.total) : '—'}</td><td class="sum">${st.count}</td><td class="sum">${fmtDecimal(st.avgAll, 2)}</td></tr>`;
@@ -105,10 +109,11 @@ function viewGrid(q) {
   const foot = `<tr><th class="nm">参加人数</th>${events.map(e => `<td class="${e.cancelled ? 'c-cancel' : ''}">${e.cancelled ? '' : o.perEvent.get(e.id)}</td>`).join('')}
     <td colspan="6" style="text-align:left">延べ ${fmtInt(o.total)}人 ／ 開催 ${o.held}回 ／ 1回平均 ${fmtDecimal(o.average, 2)}人</td></tr>`;
   return `
-    <div class="tabs">${['', ...CATEGORIES].map(c => `<a class="${c === cat ? 'on' : ''}" href="#/grid${c ? '?c=' + encodeURIComponent(c) : ''}">${c || '全員'}</a>`).join('')}</div>
+    <div class="tabs">${['', ...CATEGORIES].map(c => `<a class="${c === cat ? 'on' : ''}" href="#/grid${c ? '?c=' + encodeURIComponent(c) : ''}">${c ? CATEGORY_LABEL[c] : '全員'}</a>`).join('')}</div>
     <div class="legend">
       <span><i class="c-yellow"></i>${s.yellowMax}以下</span><span><i class="c-blue"></i>${s.yellowMax + 1}〜${s.blueMax}</span>
-      <span><i class="c-cancel"></i>中止</span><span>横にスクロールできます</span>
+      <span><i class="c-cancel"></i>中止</span><span><b class="t-under">赤字</b>アンダー（${s.par - 1}以下）</span><span><b class="t-nr">オレンジ</b>途中棄権（NR）</span>
+      <span><span class="badge">CT</span> チャンピオンティー</span><span>横にスクロールできます</span>
     </div>
     <div class="grid-wrap"><table class="grid"><thead>${head}</thead><tbody>${body}</tbody><tfoot>${foot}</tfoot></table></div>`;
 }
@@ -139,7 +144,7 @@ function viewPlayer(id) {
     <table class="list"><thead><tr><th class="name">日付</th><th class="name">回</th><th>スコア</th><th class="name">　</th></tr></thead><tbody>
       ${[...st.rounds].reverse().map(r => { const e = evMap.get(r.eventId); const b8 = st.best8EventIds.has(r.eventId); return `<tr>
         <td class="name">${h(e.date.replaceAll('-', '/'))}</td><td class="name">${h(e.label)} ${kindBadge(e)}</td>
-        <td class="${colorClass(r.score)} ${b8 ? 'b8' : ''}">${r.score}</td><td class="name small">${b8 ? 'ベスト8' : ''}</td></tr>`; }).join('')}
+        <td class="${colorClass(r.score)} ${markClass(r)} ${b8 ? 'b8' : ''}">${r.score}</td><td class="name small">${[b8 ? 'ベスト8' : '', markTitle(r)].filter(Boolean).join('・')}</td></tr>`; }).join('')}
     </tbody></table>
     <p class="small muted">${st.count >= 8 ? '枠で囲んだスコアがベスト8の計算に使われています（同じスコアは早い回を優先）。' : `${RANK_MIN_ROUNDS}ラウンドに達するとベスト8が計算されます。`}</p>` : ''}`;
 }
@@ -209,7 +214,7 @@ function loadEntry(eventId) {
   entry.eventId = eventId;
   const pl = new Map(state.data.players.map(p => [p.id, p]));
   entry.rows = state.data.scores.filter(s => s.eventId === eventId)
-    .map(s => ({ playerId: s.playerId, value: String(s.score) }))
+    .map(s => ({ playerId: s.playerId, value: String(s.score), nr: !!s.nr }))
     .sort((a, b) => compareNumber(pl.get(a.playerId) || { number: '', id: a.playerId }, pl.get(b.playerId) || { number: '', id: b.playerId }));
   entry.dirty = false;
 }
@@ -238,7 +243,8 @@ function entryRows() {
     const msg = !c.ok ? `<span class="err">${c.message}</span>` : c.warn ? `<span class="warn">${c.message}</span>` : c.empty ? '<span class="muted">未入力</span>' : '';
     return `<tr data-i="${i}">
       <td>${p ? h(displayName(p)) : h(r.playerId)}<div class="msg">${msg}</div></td>
-      <td style="width:6em"><input class="sc ${c.ok && !c.empty ? colorClass(c.value) : ''}" inputmode="numeric" pattern="[0-9]*" maxlength="3" value="${h(r.value)}" data-i="${i}" aria-label="${p ? h(p.name) : ''}のスコア"></td>
+      <td style="width:3.5em" class="small"><label title="途中棄権"><input type="checkbox" class="nr" data-i="${i}" ${r.nr ? 'checked' : ''}> NR</label></td>
+      <td style="width:6em"><input class="sc ${c.ok && !c.empty ? colorClass(c.value) + ' ' + markClass({ score: c.value, nr: r.nr }) : ''}" inputmode="numeric" pattern="[0-9]*" maxlength="3" value="${h(r.value)}" data-i="${i}" aria-label="${p ? h(p.name) : ''}のスコア"></td>
       <td style="width:2.5em"><button type="button" class="btn danger sm" data-act="remove-row" data-i="${i}" aria-label="削除">×</button></td></tr>`;
   }).join('');
 }
@@ -249,10 +255,10 @@ function entrySummary() {
 function addToEntry(ids) {
   const have = new Set(entry.rows.map(r => r.playerId));
   const added = ids.filter(id => !have.has(id));
-  added.forEach(id => entry.rows.push({ playerId: id, value: '' }));
+  added.forEach(id => entry.rows.push({ playerId: id, value: '', nr: false }));
   if (added.length) entry.dirty = true;
   render();
-  if (added.length === 1) document.querySelector(`#entry-rows input[data-i="${entry.rows.length - 1}"]`)?.focus();
+  if (added.length === 1) document.querySelector(`#entry-rows input.sc[data-i="${entry.rows.length - 1}"]`)?.focus();
 }
 function resolveTyped(text) {
   const t = text.trim().replace(/\s+/g, ' ');
@@ -276,7 +282,7 @@ async function saveEntry() {
   if (warns.length) lines.push(`${state.data.settings.warnMin}〜${state.data.settings.warnMax}の範囲外：` + warns.map(x => `${pl.get(x.r.playerId)?.name} ${x.c.value}`).join('、'));
   if (empty.length) lines.push(`未入力の${empty.length}人は保存されません`);
   if (lines.length && !confirm(lines.join('\n') + '\n\nこのまま保存しますか？')) return;
-  const rows = results.filter(x => !x.c.empty).map(x => ({ playerId: x.r.playerId, score: x.c.value }));
+  const rows = results.filter(x => !x.c.empty).map(x => ({ playerId: x.r.playerId, score: x.c.value, nr: !!x.r.nr }));
   await withBusy(async () => {
     await store.replaceEventScores(entry.eventId, rows);
     await reload();
@@ -304,7 +310,7 @@ function adminPlayers() {
     <div class="row">
       <label class="f">番号<input name="number" value="${h(p.number)}" required></label>
       <label class="f" style="flex:2 1 160px">氏名<input name="name" value="${h(p.name)}" required></label>
-      <label class="f">区分<select name="category">${CATEGORIES.map(c => `<option ${c === p.category ? 'selected' : ''}>${c}</option>`).join('')}</select></label>
+      <label class="f">区分<select name="category">${CATEGORIES.map(c => `<option value="${c}" ${c === p.category ? 'selected' : ''}>${CATEGORY_LABEL[c]}</option>`).join('')}</select></label>
     </div>
     <div class="row">
       <label class="small grow"><input type="checkbox" name="nonMember" ${p.nonMember ? 'checked' : ''}> 未入会・他クラブ（氏名の前に「*」）</label>
@@ -345,6 +351,7 @@ function adminSettings() {
   return `<form class="card" data-form="settings" style="max-width:420px">
     <label class="f">黄色にする上限（この数字以下）<input type="number" name="yellowMax" value="${s.yellowMax}" min="1" max="300" required></label>
     <label class="f">水色にする上限（黄色の次〜この数字）<input type="number" name="blueMax" value="${s.blueMax}" min="1" max="300" required></label>
+    <label class="f">パー（これより少ないスコアを赤字＝アンダーにする）<input type="number" name="par" value="${s.par}" min="1" max="300" required></label>
     <div class="legend" id="settings-preview"></div>
     <button class="btn">保存</button></form>
     <p class="small muted">スコア入力の警告は ${s.warnMin}〜${s.warnMax} の範囲外で出ます。</p>`;
@@ -475,14 +482,14 @@ document.addEventListener('click', async ev => {
 
 document.addEventListener('input', ev => {
   const t = ev.target;
-  if (t.matches('#entry-rows input[data-i]')) {
+  if (t.matches('#entry-rows input.sc[data-i]')) {
     const i = Number(t.dataset.i);
     entry.rows[i].value = t.value.replace(/[０-９]/g, d => String.fromCharCode(d.charCodeAt(0) - 0xFEE0)).replace(/\D/g, '');
     if (t.value !== entry.rows[i].value) t.value = entry.rows[i].value;
     entry.dirty = true;
     // 入力欄は作り直さず（スマホのキーボードが閉じないように）、色と注意書きだけ更新する
     const c = checkScore(t.value, state.data.settings);
-    t.className = 'sc ' + (c.ok && !c.empty ? colorClass(c.value) : '');
+    t.className = 'sc ' + (c.ok && !c.empty ? colorClass(c.value) + ' ' + markClass({ score: c.value, nr: entry.rows[i].nr }) : '');
     t.closest('tr').querySelector('.msg').innerHTML = !c.ok ? `<span class="err">${c.message}</span>` : c.warn ? `<span class="warn">${c.message}</span>` : c.empty ? '<span class="muted">未入力</span>' : '';
     document.getElementById('entry-count').textContent = entrySummary();
   }
@@ -491,9 +498,9 @@ document.addEventListener('input', ev => {
 
 document.addEventListener('keydown', ev => {
   const t = ev.target;
-  if (ev.key === 'Enter' && t.matches('#entry-rows input[data-i]')) {
+  if (ev.key === 'Enter' && t.matches('#entry-rows input.sc[data-i]')) {
     ev.preventDefault();
-    const next = document.querySelector(`#entry-rows input[data-i="${Number(t.dataset.i) + 1}"]`);
+    const next = document.querySelector(`#entry-rows input.sc[data-i="${Number(t.dataset.i) + 1}"]`);
     if (next) next.focus(); else document.getElementById('add-name')?.focus();
   }
   if (ev.key === 'Enter' && t.id === 'add-name') { ev.preventDefault(); document.querySelector('[data-act="add-typed"]').click(); }
@@ -501,6 +508,14 @@ document.addEventListener('keydown', ev => {
 
 document.addEventListener('change', ev => {
   const t = ev.target;
+  if (t.matches('#entry-rows input.nr')) {
+    const i = Number(t.dataset.i);
+    entry.rows[i].nr = t.checked; entry.dirty = true;
+    const c = checkScore(entry.rows[i].value, state.data.settings);
+    const sc = t.closest('tr').querySelector('input.sc');
+    sc.className = 'sc ' + (c.ok && !c.empty ? colorClass(c.value) + ' ' + markClass({ score: c.value, nr: t.checked }) : '');
+    document.getElementById('entry-count').textContent = entrySummary();
+  }
   if (t.id === 'ev-select') {
     if (entry.dirty && !confirm('保存していない入力があります。破棄して別の回を開きますか？')) { t.value = entry.eventId; return; }
     loadEntry(t.value); go(`#/input?e=${encodeURIComponent(t.value)}`);
@@ -534,7 +549,7 @@ document.addEventListener('submit', async ev => {
     return withBusy(async () => { await store.saveEvent(e); await reload(); toast(f.dataset.new ? `${e.label}を追加しました` : '保存しました'); });
   }
   if (kind === 'settings') {
-    const s = { yellowMax: Number(f.yellowMax.value), blueMax: Number(f.blueMax.value) };
+    const s = { yellowMax: Number(f.yellowMax.value), blueMax: Number(f.blueMax.value), par: Number(f.par.value) };
     if (!(s.yellowMax < s.blueMax)) { toast('水色の上限は黄色の上限より大きくしてください', true); return; }
     return withBusy(async () => { await store.saveSettings(s); await reload(); toast('保存しました'); });
   }

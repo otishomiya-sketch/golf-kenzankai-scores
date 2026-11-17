@@ -120,7 +120,17 @@ export function fmtInt(v) {
   return v === null || v === undefined ? '—' : v.toLocaleString('ja-JP');
 }
 
-export const DEFAULT_SETTINGS = { yellowMax: 79, blueMax: 82, warnMin: 50, warnMax: 150 };
+export const DEFAULT_SETTINGS = { yellowMax: 79, blueMax: 82, par: 72, warnMin: 50, warnMax: 150 };
+
+/** 区分の表示名（データ上は「J」のまま） */
+export const CATEGORY_LABEL = { '一般': '一般', 'J': 'J（準会員）', '女子': '女子' };
+
+/** スコアの文字の印。'nr'＝途中棄権（オレンジ）、'under'＝アンダー（赤）、null＝なし */
+export function scoreMark(s, settings) {
+  if (s.nr) return 'nr';
+  if (s.score < settings.par) return 'under';
+  return null;
+}
 
 /** スコアの入力値チェック。{ok, warn, message} */
 export function checkScore(value, settings = DEFAULT_SETTINGS) {

@@ -26,17 +26,21 @@ create table if not exists public.scores (
   event_id    text not null references public.events(id) on delete cascade,
   player_id   text not null references public.players(id) on delete restrict,
   score       integer not null check (score between 1 and 300),
+  nr          boolean not null default false,               -- 途中棄権（NR）
   updated_at  timestamptz not null default now(),
   primary key (event_id, player_id)
 );
+alter table public.scores add column if not exists nr boolean not null default false;
 create index if not exists scores_player_idx on public.scores(player_id);
 
 create table if not exists public.settings (
   id          integer primary key default 1 check (id = 1),
   yellow_max  integer not null default 79,
   blue_max    integer not null default 82,
+  par         integer not null default 72,                  -- これより少ないスコアを赤字（アンダー）にする
   updated_at  timestamptz not null default now()
 );
+alter table public.settings add column if not exists par integer not null default 72;
 insert into public.settings (id) values (1) on conflict (id) do nothing;
 
 -- 管理者（Supabase の Authentication で作ったユーザーの ID を登録する）
@@ -83,9 +87,9 @@ begin
     raise exception '管理者のみ実行できます' using errcode = '42501';
   end if;
   delete from public.scores where event_id = p_event_id;
-  insert into public.scores (event_id, player_id, score)
-  select p_event_id, x.player_id, x.score
-  from jsonb_to_recordset(p_scores) as x(player_id text, score integer);
+  insert into public.scores (event_id, player_id, score, nr)
+  select p_event_id, x.player_id, x.score, coalesce(x.nr, false)
+  from jsonb_to_recordset(p_scores) as x(player_id text, score integer, nr boolean);
 end $$;
 revoke all on function public.replace_event_scores(text, jsonb) from public, anon;
 grant execute on function public.replace_event_scores(text, jsonb) to authenticated;

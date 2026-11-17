@@ -9,8 +9,8 @@ const toPlayer = r => ({ id: r.id, number: r.number, name: r.name, category: r.c
 const fromPlayer = p => ({ id: p.id, number: p.number ?? '', name: p.name, category: p.category, non_member: !!p.nonMember });
 const toEvent = r => ({ id: r.id, roundNo: r.round_no, date: r.date, label: r.label, kind: r.kind, cancelled: r.cancelled });
 const fromEvent = e => ({ id: e.id, round_no: e.roundNo ?? null, date: e.date, label: e.label, kind: e.kind, cancelled: !!e.cancelled });
-const toScore = r => ({ eventId: r.event_id, playerId: r.player_id, score: r.score });
-const fromScore = s => ({ event_id: s.eventId, player_id: s.playerId, score: s.score });
+const toScore = r => ({ eventId: r.event_id, playerId: r.player_id, score: r.score, nr: !!r.nr });
+const fromScore = s => ({ event_id: s.eventId, player_id: s.playerId, score: s.score, nr: !!s.nr });
 
 function supabaseStore() {
   const sb = window.supabase.createClient(cfg.supabaseUrl, cfg.supabaseAnonKey);
@@ -36,7 +36,7 @@ function supabaseStore() {
       ]);
       return {
         players: players.map(toPlayer), events: events.map(toEvent), scores: scores.map(toScore),
-        settings: settings ? { ...DEFAULT_SETTINGS, yellowMax: settings.yellow_max, blueMax: settings.blue_max } : { ...DEFAULT_SETTINGS },
+        settings: settings ? { ...DEFAULT_SETTINGS, yellowMax: settings.yellow_max, blueMax: settings.blue_max, par: settings.par } : { ...DEFAULT_SETTINGS },
       };
     },
     async session() {
@@ -56,9 +56,9 @@ function supabaseStore() {
     async saveEvent(e) { must(await sb.from('events').upsert({ ...fromEvent(e), updated_at: new Date().toISOString() })); },
     async deleteEvent(id) { must(await sb.from('events').delete().eq('id', id)); },
     async replaceEventScores(eventId, rows) {
-      must(await sb.rpc('replace_event_scores', { p_event_id: eventId, p_scores: rows.map(r => ({ player_id: r.playerId, score: r.score })) }));
+      must(await sb.rpc('replace_event_scores', { p_event_id: eventId, p_scores: rows.map(r => ({ player_id: r.playerId, score: r.score, nr: !!r.nr })) }));
     },
-    async saveSettings(s) { must(await sb.from('settings').upsert({ id: 1, yellow_max: s.yellowMax, blue_max: s.blueMax, updated_at: new Date().toISOString() })); },
+    async saveSettings(s) { must(await sb.from('settings').upsert({ id: 1, yellow_max: s.yellowMax, blue_max: s.blueMax, par: s.par, updated_at: new Date().toISOString() })); },
     async importData({ players, events, scores }) {
       const chunks = (arr, n = 500) => Array.from({ length: Math.ceil(arr.length / n) }, (_, i) => arr.slice(i * n, i * n + n));
       for (const c of chunks(players || [])) must(await sb.from('players').upsert(c.map(fromPlayer)));
@@ -101,7 +101,7 @@ function demoStore() {
     async saveEvent(e) { upsert(db.events, { ...e }, x => x.id); save(); },
     async deleteEvent(id) { db.events = db.events.filter(e => e.id !== id); db.scores = db.scores.filter(s => s.eventId !== id); save(); },
     async replaceEventScores(eventId, rows) {
-      db.scores = db.scores.filter(s => s.eventId !== eventId).concat(rows.map(r => ({ eventId, playerId: r.playerId, score: r.score })));
+      db.scores = db.scores.filter(s => s.eventId !== eventId).concat(rows.map(r => ({ eventId, playerId: r.playerId, score: r.score, nr: !!r.nr })));
       save();
     },
     async saveSettings(s) { db.settings = { ...db.settings, ...s }; save(); },

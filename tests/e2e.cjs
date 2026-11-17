@@ -65,6 +65,15 @@ const txt = s => s.replace(/\s+/g, ' ').trim();
   }));
   console.log('色:', counts);
   assert.equal(counts.cancelHeads, 25);
+  // 赤字＝アンダー（パー72未満：71の1件）、オレンジ＝NR（CSV の NR 列が1の行）
+  const marks = await page.evaluate(() => ({
+    under: [...document.querySelectorAll('.grid tbody td.t-under')].map(td => td.textContent),
+    nr: [...document.querySelectorAll('.grid tbody td.t-nr')].map(td => td.textContent),
+  }));
+  console.log('文字の印:', marks);
+  assert.deepEqual(marks.under, ['71']);
+  if (process.env.EXPECT_NR) assert.deepEqual(marks.nr, ['120']);
+  assert.ok((await page.innerText('.tabs')).includes('J（準会員）'));
   assert.equal(counts.errorText, false);
   await page.screenshot({ path: OUT ? `${OUT}/2-grid.png` : undefined });
   await page.evaluate(() => { document.querySelector('.grid-wrap').scrollLeft = 900; });
@@ -88,9 +97,11 @@ const txt = s => s.replace(/\s+/g, ' ').trim();
   console.log('前回の参加者の候補:', chips);
   assert.equal(chips.length, 10); // 11/15 の9人＋「全員追加」
   await page.click('[data-act="add-all-prev"]');
-  const inputs = await page.$$('#entry-rows input');
+  const inputs = await page.$$('#entry-rows input.sc');
   await inputs[0].fill('78');
   await inputs[1].fill('160');
+  await page.check('#entry-rows input.nr[data-i="1"]');
+  assert.match(await page.getAttribute('#entry-rows input.sc[data-i="1"]', 'class'), /t-nr/);
   assert.match(await page.textContent('#entry-rows .warn'), /範囲外/);
   await page.fill('#add-name', '大宮');
   await page.click('[data-act="add-typed"]');
@@ -126,6 +137,8 @@ const txt = s => s.replace(/\s+/g, ' ').trim();
   const lines = buf.toString('utf8').trim().split('\r\n');
   console.log('書き出し scores.csv:', lines.length - 1, '件 先頭:', lines[0].replace('﻿', ''));
   assert.equal(lines.length - 1, 397);
+  assert.equal(lines[0].replace('\uFEFF', ''), '開催ID,日付,選手ID,氏名,スコア,NR');
+  assert.equal(lines.filter(l => l.endsWith(',1')).length, process.env.EXPECT_NR ? 2 : 1);
 
   // 画面幅：ページ全体に横スクロールが出ないこと
   for (const r of ['#/', '#/grid', '#/p/P002', '#/admin?t=events', '#/input']) {

@@ -37,7 +37,7 @@ export function toCsv(header, rows) {
 export const HEADERS = {
   players: ['選手ID', '番号', '氏名', '区分', '未入会_他クラブ'],
   events: ['開催ID', '回番号', '日付', '表示', '種別', '中止'],
-  scores: ['開催ID', '日付', '選手ID', '氏名', 'スコア'],
+  scores: ['開催ID', '日付', '選手ID', '氏名', 'スコア', 'NR'],
 };
 
 /** ヘッダーからファイルの種類を判定 */
@@ -78,7 +78,7 @@ export function recordsToData(kind, records) {
       } else if (kind === 'scores') {
         const score = Number(r['スコア']);
         if (!r['開催ID'] || !r['選手ID'] || !Number.isInteger(score) || score < 1 || score > 300) throw new Error('開催ID・選手ID・スコア（1〜300の整数）が必要です');
-        items.push({ eventId: r['開催ID'], playerId: r['選手ID'], score });
+        items.push({ eventId: r['開催ID'], playerId: r['選手ID'], score, nr: r['NR'] === '1' });
       }
     } catch (e) { errors.push(`${line}行目：${e.message}`); }
   });
@@ -103,5 +103,5 @@ export function scoresCsv(scores, events, players) {
   const order = new Map(sortEvents(events).map((e, i) => [e.id, i]));
   return toCsv(HEADERS.scores, [...scores]
     .sort((a, b) => (order.get(a.eventId) ?? 1e9) - (order.get(b.eventId) ?? 1e9) || a.playerId.localeCompare(b.playerId))
-    .map(s => [s.eventId, ev.get(s.eventId)?.date ?? '', s.playerId, pl.get(s.playerId)?.name ?? '', s.score]));
+    .map(s => [s.eventId, ev.get(s.eventId)?.date ?? '', s.playerId, pl.get(s.playerId)?.name ?? '', s.score, s.nr ? 1 : 0]));
 }
