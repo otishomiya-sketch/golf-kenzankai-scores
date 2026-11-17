@@ -64,7 +64,8 @@ function supabaseStore() {
     async deleteHoleCard(eventId, playerId) { must(await sb.from('hole_cards').delete().eq('event_id', eventId).eq('player_id', playerId)); },
     // スコアカードの写真を AI で読み取る（Edge Function read-scorecard）
     async readScorecard({ image, mediaType, roster }) {
-      const { data, error } = await sb.functions.invoke('read-scorecard', { body: { image, mediaType, roster } });
+      // Supabase 上の関数名（ダッシュボードで作成したときに自動で付いた名前）。中身は supabase/functions/read-scorecard/index.ts
+      const { data, error } = await sb.functions.invoke(cfg.scorecardFunction || 'bright-processor', { body: { image, mediaType, roster } });
       if (error) {
         let msg = '';
         try { msg = (await error.context?.json())?.error || ''; } catch { /* 応答が JSON でない */ }

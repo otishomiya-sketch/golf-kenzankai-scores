@@ -6,4 +6,6 @@ window.GOLF_CONFIG = {
   supabaseAnonKey: 'sb_publishable_q81GUdfbcpf6ncH4RmClMw_wMOT3zdA',
   // 会員共通の閲覧用アカウント。Supabase の Authentication → Users でこのメールアドレスのユーザーを作る（パスワードは会員に案内する）
   memberEmail: 'kenzankai.member@example.com',
+  // スコアカード読み取りの Edge Function の名前（Supabase の Edge Functions の一覧に出ている名前）
+  scorecardFunction: 'bright-processor',
 };
