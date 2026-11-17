@@ -254,7 +254,10 @@ function playerGoal(p) {
 }
 
 function chart(st, evMap) {
-  const W = 360, H = 220, L = 28, R = 8, T = 12, B = 28;
+  // 画面の幅に合わせて実寸で描く（拡大して文字や点が大きくなりすぎないように）。高さは幅の約3分の1、180〜240px
+  const W = Math.round(Math.min(1060, Math.max(300, ($app.clientWidth || 390) - 60)));
+  const H = Math.round(Math.min(240, Math.max(180, W * 0.32)));
+  const L = 30, R = 10, T = 12, B = 26;
   const pts = st.rounds;
   const vals = pts.map(r => r.score);
   let lo = Math.min(...vals), hi = Math.max(...vals);
@@ -263,14 +266,15 @@ function chart(st, evMap) {
   const y = v => T + (H - T - B) * (hi - v) / (hi - lo);
   const ticks = []; for (let v = lo; v <= hi; v += (hi - lo > 30 ? 10 : 5)) ticks.push(v);
   const avg = st.avgAll;
-  const step = Math.max(1, Math.ceil(pts.length / 5));
-  return `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="スコアの推移">
+  const step = Math.max(1, Math.ceil(pts.length / Math.max(2, Math.floor((W - L - R) / 70))));  // 日付ラベルは約70pxおき
+  const showLabel = i => i === pts.length - 1 || (i % step === 0 && x(pts.length - 1) - x(i) >= 50);
+  return `<svg class="chart" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="img" aria-label="スコアの推移">
     ${ticks.map(v => `<line x1="${L}" x2="${W - R}" y1="${y(v)}" y2="${y(v)}" stroke="var(--line)"/><text x="${L - 6}" y="${y(v) + 4}" text-anchor="end">${v}</text>`).join('')}
     <line x1="${L}" x2="${W - R}" y1="${y(avg)}" y2="${y(avg)}" stroke="var(--accent)" stroke-dasharray="4 4"/>
     <text x="${W - R}" y="${y(avg) - 4}" text-anchor="end">平均 ${fmtDecimal(avg, 2)}</text>
     <polyline fill="none" stroke="var(--chart-line)" stroke-width="1.5" points="${pts.map((r, i) => `${x(i)},${y(r.score)}`).join(' ')}"/>
     ${pts.map((r, i) => { const b8 = st.best8EventIds.has(r.eventId); return `<circle cx="${x(i)}" cy="${y(r.score)}" r="${b8 ? 5 : 4}" fill="${b8 ? 'var(--accent)' : 'var(--surface)'}" stroke="var(--accent)" stroke-width="1.5"><title>${h(evMap.get(r.eventId).label)}：${r.score}</title></circle>`; }).join('')}
-    ${pts.map((r, i) => i % step === 0 || i === pts.length - 1 ? `<text x="${x(i)}" y="${H - 8}" text-anchor="${pts.length > 1 && i === pts.length - 1 ? 'end' : i === 0 && pts.length > 1 ? 'start' : 'middle'}">${h(evMap.get(r.eventId).label)}</text>` : '').join('')}
+    ${pts.map((r, i) => showLabel(i) ? `<text x="${x(i)}" y="${H - 8}" text-anchor="${pts.length > 1 && i === pts.length - 1 ? 'end' : i === 0 && pts.length > 1 ? 'start' : 'middle'}">${h(evMap.get(r.eventId).label)}</text>` : '').join('')}
   </svg><p class="small muted" style="margin:4px 0 0">● 塗りつぶし＝ベスト8に使われたスコア　点線＝全平均</p>`;
 }
 
@@ -736,6 +740,12 @@ window.addEventListener('hashchange', () => {
   if (parts[0] !== 'input') entry.dirty = false;
   render();
   window.scrollTo(0, 0);
+});
+// 選手ページのグラフは幅に合わせて描き直す
+let resizeTimer = 0, lastWidth = window.innerWidth;
+window.addEventListener('resize', () => {
+  if (window.innerWidth === lastWidth || route().parts[0] !== 'p') return;
+  lastWidth = window.innerWidth; clearTimeout(resizeTimer); resizeTimer = setTimeout(render, 200);
 });
 window.addEventListener('beforeunload', ev => { if (entry.dirty) { ev.preventDefault(); ev.returnValue = ''; } });
 

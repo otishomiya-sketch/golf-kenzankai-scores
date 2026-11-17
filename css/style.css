@@ -143,8 +143,8 @@ input:focus, select:focus, button:focus-visible { outline: 2px solid var(--accen
 .edit-item .row > * { flex: 1 1 120px; }
 .edit-item.cancelled { background: var(--cell-cancel); }
 
-.chart { width: 100%; height: auto; display: block; }
-.chart text { fill: var(--muted); font-size: 10px; }
+.chart { max-width: 100%; height: auto; display: block; margin: 0 auto; }
+.chart text { fill: var(--muted); font-size: 11px; }
 
 .foot { text-align: center; padding: 24px 16px 40px; font-size: 13px; color: var(--muted); }
 .foot a { color: var(--muted); }
