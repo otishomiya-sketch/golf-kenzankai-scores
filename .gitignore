@@ -1,0 +1,6 @@
+# 会員の個人情報（実データの CSV）はリポジトリに入れない
+*.csv
+data/
+node_modules/
+.DS_Store
+test-results/

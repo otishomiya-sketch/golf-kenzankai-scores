@@ -1,0 +1,139 @@
+// 画面の通しテスト（デモモード）。
+// 使い方：静的サーバーを起動（python3 -m http.server 8765）してから
+//   GOLF_DATA_DIR=<CSVのフォルダ> node tests/e2e.cjs [スクリーンショットの保存先]
+// 実データ（会員の個人情報）はリポジトリに入れないため、CSV のフォルダは外から渡す。
+const { chromium } = require('playwright');
+const assert = require('node:assert/strict');
+
+const D = process.env.GOLF_DATA_DIR;
+const OUT = process.argv[2];
+const BASE = process.env.BASE_URL || 'http://localhost:8765/';
+if (!D) { console.error('GOLF_DATA_DIR を指定してください'); process.exit(2); }
+
+const txt = s => s.replace(/\s+/g, ' ').trim();
+
+(async () => {
+  const browser = await chromium.launch();
+  const errors = [];
+  const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
+  page.on('pageerror', e => errors.push(e.message));
+  page.on('console', m => { if (m.type() === 'error') errors.push(m.text()); });
+  page.on('dialog', d => d.accept());
+  const shot = async name => { if (OUT) await page.screenshot({ path: `${OUT}/${name}.png`, fullPage: true }); };
+  const toast = async () => { await page.waitForSelector('#toast:not([hidden])'); const t = await page.textContent('#toast'); await page.evaluate(() => { document.getElementById('toast').hidden = true; }); return t; };
+
+  // 6. CSV の読み込み
+  await page.goto(BASE + '#/admin?t=csv');
+  await page.setInputFiles('#csv-files', ['players.csv', 'events.csv', 'scores.csv'].map(f => `${D}/${f}`));
+  await page.waitForSelector('[data-act="import"]');
+  const preview = txt(await page.innerText('.card'));
+  console.log('取り込み確認:', preview);
+  assert.match(preview, /選手 54件/); assert.match(preview, /開催回 75件/); assert.match(preview, /スコア 394件/);
+  await page.click('[data-act="import"]');
+  console.log('→', await toast());
+
+  // 1. 順位表
+  await page.goto(BASE + '#/'); await page.reload(); await page.waitForSelector('table.list');
+  const stats = txt(await page.innerText('.stats'));
+  console.log('全体:', stats);
+  assert.match(stats, /50 開催回数/); assert.match(stats, /394 延べ参加/); assert.match(stats, /7\.88 1回平均/);
+  const top = await page.$$eval('table.list tbody tr', trs => trs.slice(0, 4).map(t => t.innerText.replace(/\s+/g, ' ')));
+  console.log('一般 上位:', top);
+  assert.match(top[0], /^1 下屋敷千尋 599 74\.875 17/);
+  assert.match(top[1], /^2 西島郷史 630/); assert.match(top[2], /^3 高山秀樹 630/);
+  await shot('1-ranking');
+  await page.goto(BASE + '#/?c=' + encodeURIComponent('女子')); await page.waitForTimeout(150);
+  const women = await page.$$eval('table.list tbody tr', trs => trs.map(t => t.innerText.replace(/\s+/g, ' ')));
+  console.log('女子:', women);
+  await page.goto(BASE + '#/?c=J'); await page.waitForTimeout(150);
+  const j = await page.$$eval('table.list tbody tr', trs => trs.map(t => t.innerText.replace(/\s+/g, ' ')));
+  console.log('J:', j);
+  assert.ok(j.some(r => r.includes('*大宮久司')), '未入会は「*」付き');
+
+  // 2. 成績一覧
+  await page.goto(BASE + '#/grid'); await page.waitForSelector('.grid');
+  const honda = txt(await page.$eval('xpath=//tbody/tr[.//a[contains(.,"本田")]]', t => t.innerText));
+  console.log('本田さんの行（末尾）:', honda.slice(-30));
+  assert.match(honda, /181 2 90\.50$/);
+  const foot = txt(await page.innerText('.grid tfoot'));
+  assert.match(foot, /延べ 394人 ／ 開催 50回 ／ 1回平均 7\.88人/);
+  const counts = await page.evaluate(() => ({
+    yellow: document.querySelectorAll('.grid tbody td.c-yellow').length,
+    blue: document.querySelectorAll('.grid tbody td.c-blue').length,
+    cancelHeads: document.querySelectorAll('.grid thead th.c-cancel').length,
+    errorText: /#NUM!|#DIV\/0!|NaN|undefined|Infinity/.test(document.body.innerText),
+  }));
+  console.log('色:', counts);
+  assert.equal(counts.cancelHeads, 25);
+  assert.equal(counts.errorText, false);
+  await page.screenshot({ path: OUT ? `${OUT}/2-grid.png` : undefined });
+  await page.evaluate(() => { document.querySelector('.grid-wrap').scrollLeft = 900; });
+  if (OUT) await page.screenshot({ path: `${OUT}/2-grid-scrolled.png` });
+
+  // 3. 選手ページ
+  await page.goto(BASE + '#/p/P001'); await page.waitForSelector('svg.chart');
+  const pst = txt(await page.innerText('.stats'));
+  console.log('下屋敷さん:', pst);
+  assert.match(pst, /1位/); assert.match(pst, /71 ベストスコア/); assert.match(pst, /522 ベスト7/); assert.match(pst, /1,313 全計/);
+  assert.equal(await page.$$eval('td.b8', x => x.length), 8);
+  await shot('3-player');
+
+  // 4. スコア入力：新しい開催回を作って、前回の参加者から入力
+  await page.goto(BASE + '#/admin?t=events');
+  await page.fill('form[data-new="1"] input[name=date]', '2026-11-21');
+  await page.click('form[data-new="1"] button.btn');
+  console.log('→', await toast());
+  await page.goto(BASE + '#/input?e=E076'); await page.waitForSelector('#entry-rows');
+  const chips = await page.$$eval('.chip', x => x.map(c => c.textContent));
+  console.log('前回の参加者の候補:', chips);
+  assert.equal(chips.length, 10); // 11/15 の9人＋「全員追加」
+  await page.click('[data-act="add-all-prev"]');
+  const inputs = await page.$$('#entry-rows input');
+  await inputs[0].fill('78');
+  await inputs[1].fill('160');
+  assert.match(await page.textContent('#entry-rows .warn'), /範囲外/);
+  await page.fill('#add-name', '大宮');
+  await page.click('[data-act="add-typed"]');
+  await page.keyboard.type('88');
+  await shot('4-input');
+  await page.click('[data-act="save-entry"]');
+  console.log('→', await toast());
+  await page.goto(BASE + '#/'); await page.waitForSelector('.stats');
+  const after = txt(await page.innerText('.stats'));
+  console.log('保存後の全体:', after);
+  assert.match(after, /51 開催回数/); assert.match(after, /397 延べ参加/);
+
+  // 5. 管理：色の境目を変える
+  await page.goto(BASE + '#/admin?t=settings');
+  await page.fill('input[name=yellowMax]', '80');
+  await page.click('form[data-form=settings] button');
+  console.log('→', await toast());
+  await page.goto(BASE + '#/grid'); await page.waitForSelector('.grid');
+  const y80 = await page.$$eval('.grid tbody td.c-yellow', x => x.length);
+  console.log('黄色のセル数 79以下→80以下:', counts.yellow, '→', y80);
+  assert.ok(y80 > counts.yellow);
+  // 区分の変更
+  await page.goto(BASE + '#/admin?t=players');
+  await shot('5-admin-players');
+
+  // 6. CSV 書き出し→中身を確認
+  await page.goto(BASE + '#/admin?t=csv');
+  const [dl] = await Promise.all([page.waitForEvent('download'), page.click('[data-act=export][data-kind=scores]')]);
+  const fs = require('node:fs');
+  const p = await dl.path();
+  const buf = fs.readFileSync(p);
+  assert.equal(buf.subarray(0, 3).toString('hex'), 'efbbbf', 'BOM 付き');
+  const lines = buf.toString('utf8').trim().split('\r\n');
+  console.log('書き出し scores.csv:', lines.length - 1, '件 先頭:', lines[0].replace('﻿', ''));
+  assert.equal(lines.length - 1, 397);
+
+  // 画面幅：ページ全体に横スクロールが出ないこと
+  for (const r of ['#/', '#/grid', '#/p/P002', '#/admin?t=events', '#/input']) {
+    await page.goto(BASE + r); await page.waitForTimeout(150);
+    const w = await page.evaluate(() => document.documentElement.scrollWidth);
+    assert.ok(w <= 390, `${r} の幅 ${w}`);
+  }
+  assert.deepEqual(errors, []);
+  console.log('すべて合格');
+  await browser.close();
+})().catch(e => { console.error('失敗:', e.message); process.exit(1); });
