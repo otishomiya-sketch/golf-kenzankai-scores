@@ -63,17 +63,27 @@ export function playerStats(players, events, scores) {
 export function rankCategory(statsMap, category) {
   const list = [...statsMap.values()].filter(s => s.player.category === category);
   const byNumber = (a, b) => compareNumber(a.player, b.player);
-  const ranked = list.filter(s => s.count >= RANK_MIN_ROUNDS).sort((a, b) =>
-    a.best8 - b.best8 || b.count - a.count || a.total - b.total || byNumber(a, b));
-  // 3つの条件がすべて同じなら同順位
+  const key = (a, b) => a.best8 - b.best8 || b.count - a.count || a.total - b.total || compareRecent(a, b);
+  const ranked = list.filter(s => s.count >= RANK_MIN_ROUNDS).sort((a, b) => key(a, b) || byNumber(a, b));
+  // 4つの条件（ベスト8・回数・全計・直近のスコア）がすべて同じなら同順位
   let prev = null;
   ranked.forEach((s, i) => {
-    const same = prev && prev.best8 === s.best8 && prev.count === s.count && prev.total === s.total;
+    const same = prev && key(prev, s) === 0;
     s.rank = same ? prev.rank : i + 1;
     prev = s;
   });
   const unranked = list.filter(s => s.count < RANK_MIN_ROUNDS).sort((a, b) => b.count - a.count || byNumber(a, b));
   return { ranked, unranked };
+}
+
+/** 直近のスコアから順に比べ、少ない方を上にする（幹事回答 2026-11：同点は直近のスコアが良い方を上） */
+export function compareRecent(a, b) {
+  const n = Math.min(a.rounds.length, b.rounds.length);
+  for (let i = 1; i <= n; i++) {
+    const d = a.rounds[a.rounds.length - i].score - b.rounds[b.rounds.length - i].score;
+    if (d) return d;
+  }
+  return 0;
 }
 
 /** 番号の自然順（1,2,…,10 / J1,J2,…） */

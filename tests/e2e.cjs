@@ -19,6 +19,8 @@ const txt = s => s.replace(/\s+/g, ' ').trim();
   page.on('pageerror', e => errors.push(e.message));
   page.on('console', m => { if (m.type() === 'error') errors.push(m.text()); });
   page.on('dialog', d => d.accept());
+  // 通しテストはデモモード（ブラウザ内保存）で行う。本番の接続先は使わない
+  await page.route('**/config.js', r => r.fulfill({ contentType: 'text/javascript', body: 'window.GOLF_CONFIG = {};' }));
   const shot = async name => { if (OUT) await page.screenshot({ path: `${OUT}/${name}.png`, fullPage: true }); };
   const toast = async () => { await page.waitForSelector('#toast:not([hidden])'); const t = await page.textContent('#toast'); await page.evaluate(() => { document.getElementById('toast').hidden = true; }); return t; };
 

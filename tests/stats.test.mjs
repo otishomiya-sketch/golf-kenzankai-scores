@@ -56,6 +56,17 @@ test('3条件すべて同じなら同順位', () => {
   assert.deepEqual(ranked.map(s => s.rank), [1, 1]);
 });
 
+test('ベスト8・回数・全計が同じなら、直近のスコアが良い方を上（幹事回答）', () => {
+  const players = [P('A', '1'), P('B', '2')];
+  const events = Array.from({ length: 9 }, (_, i) => E(`E${i}`, `2026-01-0${i + 1}`));
+  const scores = [];
+  // 2人とも同じ9スコアだが順番が違う。最後の回：A=85、B=80 → B が上
+  [80, 81, 82, 83, 84, 85, 86, 87, 80].forEach((s, i) => scores.push({ eventId: `E${i}`, playerId: 'A', score: [80, 81, 82, 83, 84, 80, 86, 87, 85][i] }));
+  [80, 81, 82, 83, 84, 85, 86, 87, 80].forEach((s, i) => scores.push({ eventId: `E${i}`, playerId: 'B', score: s }));
+  const { ranked } = rankCategory(playerStats(players, events, scores), '一般');
+  assert.deepEqual(ranked.map(s => [s.player.id, s.rank]), [['B', 1], ['A', 2]]);
+});
+
 test('ベスト8に使うスコアは、同点なら早い開催を優先', () => {
   const players = [P('A', '1')];
   const events = Array.from({ length: 9 }, (_, i) => E(`E${i}`, `2026-01-0${i + 1}`));

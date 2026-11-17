@@ -4,4 +4,6 @@
 window.GOLF_CONFIG = {
   supabaseUrl: 'https://lmaehrxuzlpliwnregpw.supabase.co',
   supabaseAnonKey: 'sb_publishable_q81GUdfbcpf6ncH4RmClMw_wMOT3zdA',
+  // 会員共通の閲覧用アカウント。Supabase の Authentication → Users でこのメールアドレスのユーザーを作る（パスワードは会員に案内する）
+  memberEmail: 'kenzankai.member@example.com',
 };

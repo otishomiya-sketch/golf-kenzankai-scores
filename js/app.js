@@ -4,7 +4,7 @@ import {
   scoreColor, scoreMark, fmtDecimal, fmtInt, checkScore, compareNumber, DEFAULT_SETTINGS, CATEGORY_LABEL,
 } from './stats.js';
 import { parseCsv, detectKind, recordsToData, playersCsv, eventsCsv, scoresCsv, defaultLabel } from './csv.js';
-import { store, DEMO } from './store.js';
+import { store, DEMO, MEMBER_EMAIL } from './store.js';
 
 const $app = document.getElementById('app');
 const state = { data: null, stats: null, overall: null, session: { user: null, admin: false } };
@@ -38,14 +38,15 @@ async function reload() {
 }
 
 function nav(active) {
-  const items = [['ranking', '#/', '順位表'], ['grid', '#/grid', '成績一覧']];
+  const items = signedOut() ? [] : [['ranking', '#/', '順位表'], ['grid', '#/grid', '成績一覧']];
   if (state.session.admin) items.push(['input', '#/input', 'スコア入力'], ['admin', '#/admin', '管理']);
   document.getElementById('nav').innerHTML = items.map(([k, href, label]) =>
     `<a href="${href}" class="${k === active ? 'on' : ''}">${label}</a>`).join('');
   const foot = document.getElementById('foot');
   if (DEMO) foot.innerHTML = '';
-  else if (state.session.user) foot.innerHTML = `${h(state.session.user.email)}${state.session.admin ? '（管理者）' : ''} ・ <a href="#" data-act="logout">ログアウト</a>`;
-  else foot.innerHTML = '<a href="#/login">管理者ログイン</a>';
+  else if (state.session.admin) foot.innerHTML = `${h(state.session.user.email)}（管理者） ・ <a href="#" data-act="logout">ログアウト</a>`;
+  else if (state.session.user) foot.innerHTML = '会員としてログイン中 ・ <a href="#" data-act="logout">ログアウト</a>';
+  else foot.innerHTML = active === 'login' ? '<a href="#/">会員の方はこちら</a>' : '<a href="#/login">管理者ログイン</a>';
 }
 
 // ---------- 1. 順位表 ----------
@@ -406,6 +407,15 @@ function download(name, text) {
 }
 
 // ---------- ログイン ----------
+// 会員だけが見られるようにするため、ログインしていない人には閲覧用のパスワード入力だけを出す
+const signedOut = () => !DEMO && !state.session.user;
+function viewMemberLogin() {
+  return `<h1>研鑽会 成績表</h1><form class="card" data-form="member-login" style="max-width:380px">
+    <p class="small muted" style="margin-top:0">会員専用のページです。研鑽会でお知らせしているパスワードを入力してください。一度入力すると、この端末では次回から入力不要です。</p>
+    <label class="f">パスワード<input type="password" name="password" autocomplete="current-password" required></label>
+    <button class="btn">見る</button></form>`;
+}
+
 function viewLogin() {
   return `<h1>管理者ログイン</h1><form class="card" data-form="login" style="max-width:380px">
     <label class="f">メールアドレス<input type="email" name="email" autocomplete="username" required></label>
@@ -424,6 +434,8 @@ async function withBusy(fn) {
 function render() {
   const { parts, q } = route();
   const page = parts[0] || 'ranking';
+  if (signedOut() && page !== 'login') { nav('member-login'); $app.innerHTML = viewMemberLogin(); return; }
+  if (!state.data && page !== 'login') { $app.innerHTML = '<p class="muted pad">読み込み中…</p>'; return; }
   const needAdmin = ['input', 'admin'].includes(page);
   if (needAdmin && !state.session.admin) { go('#/login'); return; }
   nav(page === 'p' ? 'ranking' : page);
@@ -439,7 +451,7 @@ document.addEventListener('click', async ev => {
   const el = ev.target.closest('[data-act]');
   if (!el) return;
   const act = el.dataset.act;
-  if (act === 'logout') { ev.preventDefault(); await store.signOut(); state.session = await store.session(); go('#/'); return; }
+  if (act === 'logout') { ev.preventDefault(); await store.signOut(); state.session = await store.session(); state.data = null; go('#/'); return; }
   if (act === 'add-player') return addToEntry([el.dataset.id]);
   if (act === 'add-all-prev') return addToEntry(previousParticipants(state.data.events.find(e => e.id === entry.eventId)).map(p => p.id));
   if (act === 'add-typed') {
@@ -532,8 +544,18 @@ document.addEventListener('submit', async ev => {
     return withBusy(async () => {
       await store.signIn(f.email.value.trim(), f.password.value);
       state.session = await store.session();
-      if (!state.session.admin) { toast('このアカウントは管理者に登録されていません', true); return; }
+      await reload();
+      if (!state.session.admin) { toast('このアカウントは管理者に登録されていません', true); go('#/'); return; }
       go('#/input');
+    });
+  }
+  if (kind === 'member-login') {
+    return withBusy(async () => {
+      if (!MEMBER_EMAIL) throw new Error('閲覧用アカウントが設定されていません（config.js の memberEmail）');
+      try { await store.signIn(MEMBER_EMAIL, f.password.value); } catch { throw new Error('パスワードが違います'); }
+      state.session = await store.session();
+      await reload();
+      go('#/');
     });
   }
   if (kind === 'player') {
@@ -570,7 +592,7 @@ window.addEventListener('beforeunload', ev => { if (entry.dirty) { ev.preventDef
   if (DEMO) document.getElementById('banner').innerHTML = '<div class="banner">デモモード：データはこのブラウザにだけ保存されます（Supabase 未設定）</div>';
   try {
     state.session = await store.session();
-    await reload();
+    if (!signedOut()) await reload();
     render();
   } catch (e) {
     $app.innerHTML = `<p class="err pad">データを読み込めませんでした：${h(e.message)}</p><p class="pad"><button class="btn" onclick="location.reload()">再読み込み</button></p>`;

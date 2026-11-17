@@ -1,6 +1,6 @@
 -- ゴルフ研鑽会 成績表：Supabase のテーブル定義
 -- Supabase の「SQL Editor」に全文を貼り付けて1回実行する（何度実行しても壊れない）。
--- 読み取り：誰でも（会員はログイン不要で閲覧）
+-- 読み取り：ログインした人だけ（会員は共通の閲覧用アカウント、管理者は個人のアカウント）
 -- 書き込み：admins テーブルに登録された管理者だけ
 
 create table if not exists public.players (
@@ -69,8 +69,9 @@ declare t text;
 begin
   foreach t in array array['players', 'events', 'scores', 'settings'] loop
     execute format('drop policy if exists "read_all" on public.%I', t);
+    execute format('drop policy if exists "read_members" on public.%I', t);
     execute format('drop policy if exists "admin_write" on public.%I', t);
-    execute format('create policy "read_all" on public.%I for select to anon, authenticated using (true)', t);
+    execute format('create policy "read_members" on public.%I for select to authenticated using (true)', t);
     execute format('create policy "admin_write" on public.%I for all to authenticated using (public.is_admin()) with check (public.is_admin())', t);
   end loop;
 end $$;
@@ -95,6 +96,7 @@ revoke all on function public.replace_event_scores(text, jsonb) from public, ano
 grant execute on function public.replace_event_scores(text, jsonb) to authenticated;
 
 -- テーブルへの権限（Supabase の既定でも付くが、明示しておく）
-grant select on public.players, public.events, public.scores, public.settings to anon, authenticated;
+revoke all on public.players, public.events, public.scores, public.settings, public.admins from anon;
+grant select on public.players, public.events, public.scores, public.settings to authenticated;
 grant insert, update, delete on public.players, public.events, public.scores, public.settings to authenticated;
 grant select on public.admins to authenticated;
