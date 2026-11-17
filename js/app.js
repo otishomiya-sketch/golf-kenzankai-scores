@@ -175,7 +175,7 @@ const entry = { eventId: null, rows: [], dirty: false };
 
 function viewInput(q) {
   const events = sortEvents(state.data.events);
-  if (!events.length) return '<p>開催回がありません。先に「管理」で開催回を追加してください。</p>';
+  if (!events.length) return '<p>開催回がありません。</p><p><a class="btn" href="#/admin?t=csv">CSV を取り込む</a> <a class="btn sub" href="#/admin?t=events">開催回を追加</a></p>';
   const want = q.get('e');
   if (want && want !== entry.eventId) loadEntry(want);
   if (!entry.eventId || !events.some(e => e.id === entry.eventId)) {
