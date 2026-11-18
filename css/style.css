@@ -290,3 +290,14 @@ input:focus, select:focus, button:focus-visible { outline: 2px solid var(--accen
 .read-box { display: grid; gap: 4px; margin-bottom: 8px; }
 .read-row { display: flex; gap: 8px; align-items: center; padding: 6px 0; font-size: 14px; }
 .ok { color: var(--up); font-weight: 600; }
+
+/* 選手選考の推薦ライン */
+.slot-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 8px; margin: 10px 0 12px; }
+.slot { display: grid; gap: 2px; padding: 10px 12px; border-radius: 12px; background: var(--surface); border: 1px solid var(--line); font-size: 13px; }
+.slot b { font-size: 14px; }
+.stags { display: flex; flex-wrap: wrap; gap: 4px 6px; align-items: center; margin-top: 3px; }
+.stag { font-size: 11px; font-weight: 700; padding: 1px 6px; border-radius: 999px; white-space: nowrap; }
+.stag.in { background: var(--accent); color: var(--on-accent); }
+.stag.reserve { background: #f5c542; color: #1c2420; }
+.list.selection .line-sep td { background: var(--accent-soft); color: var(--accent); font-size: 12px; font-weight: 700; text-align: left; padding: 3px 8px; border-top: 2px dashed var(--accent); }
+.list .me-row td { background: var(--accent-soft); }

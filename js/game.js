@@ -84,3 +84,26 @@ export function badges(s, { maxCount, par, latestEventId }) {
   if (s.count > 0 && s.count === maxCount) out.push({ icon: '💪', label: '参加回数がこの区分で最多' });
   return out.slice(0, 3);
 }
+
+// ---------- 推薦ライン（団体戦の推薦枠。幹事回答 2026-11） ----------
+// 決定後に本人の出場意思を確認して繰り上がりがあるので、ここでは「今の順位で何位まで」を示すだけ。
+export const SELECTION_SLOTS = [
+  { key: 'hokkaido', short: '北海道', name: '北海道倶楽部対抗競技', players: 8, reserve: 1 },
+  { key: 'tomamin', short: 'とまみん', name: 'とまみん杯クラブ対抗ゴルフ大会', players: 6, reserve: 1 },
+];
+
+/** 選考順位の各行に、どの大会の選手圏・補欠圏か、一番近いラインまで何打かを付ける */
+export function selectionLines(ranked, slots = SELECTION_SLOTS) {
+  const pointsAtRank = r => { const x = ranked.filter(y => y.rank <= r).pop(); return x ? x.points : null; };
+  // 各大会の「選手のライン」（N位の合計）。人数が足りなければ null
+  const lines = slots.map(s => ({ ...s, line: ranked.length >= s.players ? pointsAtRank(s.players) : null, lineName: ranked.filter(y => y.rank <= s.players).pop() || null }));
+  const rows = ranked.map(r => {
+    const tags = lines.map(s => (r.rank <= s.players ? { key: s.key, text: `${s.short} 選手圏`, kind: 'in' }
+      : r.rank <= s.players + s.reserve ? { key: s.key, text: `${s.short} 補欠圏`, kind: 'reserve' } : null)).filter(Boolean);
+    // まだ選手圏に入っていない大会のうち、ラインに一番近いもの
+    const targets = lines.filter(s => s.line !== null && r.rank > s.players).map(s => ({ ...s, gap: Math.round((r.points - s.line) * 10) / 10 }))
+      .sort((a, b) => a.gap - b.gap);
+    return { ...r, tags, next: targets[0] || null };
+  });
+  return { rows, lines };
+}

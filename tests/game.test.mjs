@@ -36,3 +36,17 @@ test('順位表の演出：首位のリード、上との差、前回からの�
   assert.ok(g.rows[0].badges.some(b => b.icon === '🦅'));   // 60 はアンダー
   assert.equal(g.waiting[0].toGo, 5);
 });
+
+import { selectionLines } from '../js/game.js';
+test('推薦ライン：北海道（選手8＋補欠1）・とまみん（選手6＋補欠1）', () => {
+  const ranked = Array.from({ length: 11 }, (_, i) => ({ player: { id: `P${i}` }, rank: i + 1, points: 700 + i * 2.5 }));
+  const { rows, lines } = selectionLines(ranked);
+  assert.equal(lines[0].line, 717.5);   // 8位
+  assert.equal(lines[1].line, 712.5);   // 6位
+  assert.deepEqual(rows[5].tags.map(t => t.text), ['北海道 選手圏', 'とまみん 選手圏']);
+  assert.deepEqual(rows[6].tags.map(t => t.text), ['北海道 選手圏', 'とまみん 補欠圏']);
+  assert.deepEqual(rows[8].tags.map(t => t.text), ['北海道 補欠圏']);
+  assert.equal(rows[6].next.short, 'とまみん'); assert.equal(rows[6].next.gap, 2.5);
+  assert.equal(rows[10].next.short, '北海道');  assert.equal(rows[10].next.gap, 7.5);
+  assert.equal(rows[0].next, null);
+});

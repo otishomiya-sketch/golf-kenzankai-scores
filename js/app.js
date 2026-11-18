@@ -6,7 +6,7 @@ import {
 } from './stats.js';
 import { parseCsv, detectKind, recordsToData, playersCsv, eventsCsv, scoresCsv, defaultLabel } from './csv.js';
 import { store, DEMO, MEMBER_EMAIL, AI_SCORECARD } from './store.js';
-import { gameBoard } from './game.js';
+import { gameBoard, selectionLines } from './game.js';
 import { playerAnalysis, insights } from './analysis.js';
 import { holeAnalysis, holeInsights } from './holes.js';
 import { COURSE } from './course.js';
@@ -194,16 +194,31 @@ function viewSelection() {
     ? `<div class="notice">選考確定（${h(s.selectionDate.replaceAll('-', '/'))} 締め）</div>`
     : `<div class="notice">暫定順位です。${s.selectionDate ? `選考の締め日：${h(s.selectionDate.replaceAll('-', '/'))}` : '選考の締め日は未定です'}。
        締め日の時点で ${r.year}年4月以降のスコアが${SELECTION_NEW_SEASON}枚に満たない人は対象外になります。</div>`;
-  const row = x => `<tr>
+  const { rows, lines } = selectionLines(r.ranked);
+  const mine = myPlayerId();
+  const tagHtml = t => `<span class="stag ${t.kind}">${h(t.text)}</span>`;
+  const row = x => `<tr class="${x.player.id === mine ? 'me-row' : ''}">
     <td class="rank">${x.rank}</td>
-    <td class="name"><a href="#/p/${encodeURIComponent(x.player.id)}">${h(displayName(x.player))}</a></td>
+    <td class="name"><a href="#/p/${encodeURIComponent(x.player.id)}">${h(displayName(x.player))}</a>
+      <div class="stags">${x.tags.map(tagHtml).join('')}${x.next ? `<span class="small muted">${h(x.next.short)}の選手ラインまで あと <b>${x.next.gap.toFixed(1)}</b></span>` : ''}</div></td>
     <td>${fmtInt(x.best8)}</td><td>${x.avg12.toFixed(1)}</td><td><b>${x.points.toFixed(1)}</b></td>
     <td class="${x.newSeasonOk ? '' : 'warn'}">${x.newSeason}/${SELECTION_NEW_SEASON}</td></tr>`;
+  // 各大会の選手ライン・補欠ラインの直後に区切りの行を入れる
+  const sepAfter = new Map();
+  for (const l of lines) {
+    const add = (n, text) => { const last = rows.filter(y => y.rank <= n).pop(); if (last && rows[rows.length - 1] !== last) sepAfter.set(last.player.id, [...(sepAfter.get(last.player.id) || []), text]); };
+    add(l.players, `${l.short}：選手ライン（${l.players}名）`);
+    add(l.players + l.reserve, `${l.short}：補欠ライン（${l.reserve}名）`);
+  }
+  const body = rows.map(x => row(x) + (sepAfter.get(x.player.id) || []).map(t => `<tr class="line-sep"><td colspan="6">${h(t)}</td></tr>`).join('')).join('');
   return `<h1>選手選考 <span class="small muted">${r.year}年</span></h1>${head}
-    <table class="list">
+    <div class="slot-cards">${lines.map(l => `<div class="slot"><b>${h(l.name)}</b><span>選手${l.players}名＋補欠${l.reserve}名</span>
+      <span>現在の選手ライン：${l.line === null ? '—' : `${l.players}位 ${h(l.lineName.player.name)}（${l.line.toFixed(1)}）`}</span></div>`).join('')}</div>
+    <table class="list selection">
       <thead><tr><th class="rank">順位</th><th class="name">氏名</th><th>ベスト8</th><th>12枚平均</th><th>合計</th><th>4月〜</th></tr></thead>
-      <tbody>${r.ranked.map(row).join('') || `<tr><td colspan="6" class="name muted">対象者はまだいません</td></tr>`}</tbody>
+      <tbody>${body || `<tr><td colspan="6" class="name muted">対象者はまだいません</td></tr>`}</tbody>
     </table>
+    <p class="small muted">推薦は順位の上から決まり、本人の出場の意思確認で繰り上がることがあります。</p>
     <p class="small muted">合計＝ベスト8＋直近${SELECTION_RECENT}枚の平均（小数第1位まで・以下切り捨て）。少ない順。同点は12枚平均の良い方が上。
       対象は選手会員（一般で「*」の付かない方）で、今シーズン${SELECTION_RECENT}枚以上。「4月〜」は${fmtDate(r.newSeasonFrom)}以降の枚数。</p>
     ${r.excluded.length ? `<h2>対象外（${r.final ? `${SELECTION_RECENT}枚未満、または4月以降${SELECTION_NEW_SEASON}枚未満` : `${SELECTION_RECENT}枚未満`}）</h2>
@@ -423,6 +438,16 @@ function analysisCard(st) {
     <p class="small muted" style="margin-bottom:0">※ 記録は1ラウンドの合計スコアだけなので、ホール別の得意・不得意はまだ分かりません。</p></div>`;
 }
 
+// 選手ページ：推薦（選手選考）での位置
+function selectionStatus(p) {
+  const s = state.data.settings;
+  const sel = selectionRanking(state.data.players, state.data.events, state.data.scores, { seasonStart: s.seasonStart, selectionDate: s.selectionDate, today: todayJst() });
+  const x = selectionLines(sel.ranked).rows.find(y => y.player.id === p.id);
+  if (!x) return '';
+  return `<div class="small" style="margin-top:4px">選手選考 ${x.rank}位${sel.final ? '' : '（暫定）'} ${x.tags.map(t => `<span class="stag ${t.kind}">${h(t.text)}</span>`).join('')}
+    ${x.next ? `${h(x.next.short)}の選手ラインまで あと <b>${x.next.gap.toFixed(1)}</b>` : ''}</div>`;
+}
+
 // 選手ページの「次の目標」
 function playerGoal(p) {
   const { rows, waiting } = gameBoard(state.data.players, state.events, state.data.scores, p.category, state.data.settings);
@@ -431,7 +456,7 @@ function playerGoal(p) {
   const mineBtn = isMine ? '<span class="small muted">⛳ この端末の「自分」に設定中</span>'
     : `<button type="button" class="btn sub sm" data-act="my-set" data-id="${h(p.id)}">これは自分（順位表に表示）</button>`;
   if (r) return `<div class="goal anim" style="--i:0"><div class="goal-rank">${r.rank}<i>位</i> ${moveTag(r.move)}</div>
-    <div class="goal-text">${goalText(r)} ${badgeHtml(r.badges)}</div>${mineBtn}</div>`;
+    <div class="goal-text">${goalText(r)} ${badgeHtml(r.badges)}${selectionStatus(p)}</div>${mineBtn}</div>`;
   if (w) return `<div class="goal anim" style="--i:0"><div class="goal-rank">あと${w.toGo}<i>回</i></div>
     <div class="goal-text">ランキング入りまで <span class="dots">${dots(w.count)}</span> ${badgeHtml(w.badges)}</div>${mineBtn}</div>`;
   return `<div class="goal">${mineBtn}</div>`;
