@@ -1,0 +1,37 @@
+# Supabase の無料プランは、1週間アクセスがないと一時停止する。
+# それを防ぐため、3日ごとにデータベースの確認用の関数（keepalive：現在時刻を返すだけ）を呼ぶ。
+# また GitHub は、公開リポジトリで60日間更新がないと定期実行を止めるので、毎回この定期実行を有効にし直す。
+name: keepalive
+
+on:
+  schedule:
+    - cron: '17 3 */3 * *'   # 3日ごと 03:17（UTC）＝ 日本時間 12:17
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: write
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: データベースに軽くアクセスする
+        run: |
+          # 接続先と公開用のキーは config.js から読む（どちらも公開して問題のない値）
+          URL=$(grep -oE "supabaseUrl: '[^']+'" config.js | cut -d"'" -f2)
+          KEY=$(grep -oE "supabaseAnonKey: '[^']+'" config.js | cut -d"'" -f2)
+          for i in 1 2 3; do
+            CODE=$(curl -s -o out.txt -w '%{http_code}' -X POST "$URL/rest/v1/rpc/keepalive" -H "apikey: $KEY" -H "Content-Type: application/json" -d '{}')
+            echo "HTTP $CODE $(cat out.txt)"
+            [ "$CODE" = "200" ] && exit 0
+            sleep 20
+          done
+          echo "::error::Supabase に接続できませんでした（一時停止している可能性があります。Supabase の画面で再開してください）"
+          exit 1
+      - name: この定期実行を有効にし直す（60日で止まらないように）
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh api -X PUT "repos/${{ github.repository }}/actions/workflows/keepalive.yml/enable" || true

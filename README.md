@@ -94,6 +94,10 @@ GOLF_DATA_DIR=<CSVのフォルダ> node tests/e2e.cjs   # 画面の通しテス�
 - 準備：[`supabase/004_hole_cards.sql`](supabase/004_hole_cards.sql) を実行／Edge Function を作成／Secrets に `ANTHROPIC_API_KEY` を登録
 - コース情報（パー）は [`js/course.js`](js/course.js)（https://biracc.com/guide/ より）
 
+## 無料プランの一時停止を防ぐ
+Supabase の無料プランは1週間アクセスがないと一時停止する。GitHub Actions の [`keepalive`](.github/workflows/keepalive.yml) が3日ごとに確認用の関数（[`supabase/005_keepalive.sql`](supabase/005_keepalive.sql)、現在時刻を返すだけ）を呼んで防ぐ。
+失敗すると Actions に赤い×が付き、GitHub からメールが届く。そのときは Supabase の画面でプロジェクトを再開する。
+
 ## 幹事に確認済み（2026-11）
 - 公開範囲：会員だけに見せる（会長・副会長の確認後に案内）
 - NR：120点のペナルティとして、そのまま集計に含める（故意のNR防止）
